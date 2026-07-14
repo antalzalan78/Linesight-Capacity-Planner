@@ -1,0 +1,1780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LineSight — Monthly Capacity Planner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+:root{
+  --bg:#0f1117;--bg2:#171b24;--bg3:#1e2330;--border:rgba(255,255,255,0.08);
+  --text:#e8eaf0;--text2:#7a8299;
+  --green:#1D9E75;--green-l:#9FE1CB;--green-bg:rgba(29,158,117,0.13);
+  --blue:#378ADD;--blue-l:#B5D4F4;
+  --yellow:#EF9F27;--yellow-bg:rgba(239,159,39,0.13);
+  --red:#E24B4A;--red-bg:rgba(226,75,74,0.13);
+  --r:8px;--font:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;padding:1.5rem 2rem 3rem;}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.75rem;padding-bottom:1rem;border-bottom:.5px solid var(--border);}
+.header-left{display:flex;align-items:baseline;gap:12px;}
+.logo{font-family:var(--mono);font-size:18px;font-weight:500;color:var(--green);}
+.header-title{font-size:13px;color:var(--text2);font-weight:300;}
+.month-nav{display:flex;align-items:center;gap:6px;}
+.nav-btn{background:var(--bg3);border:.5px solid var(--border);color:var(--text2);cursor:pointer;padding:5px 10px;border-radius:5px;font-size:14px;transition:color .15s;}
+.nav-btn:hover{color:var(--text);}
+.month-label{font-family:var(--mono);font-size:13px;color:var(--text);min-width:130px;text-align:center;}
+.tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:var(--bg2);border:.5px solid var(--border);border-radius:var(--r);padding:4px;width:fit-content;}
+.tab{font-family:var(--mono);font-size:11px;padding:6px 16px;border-radius:5px;cursor:pointer;border:none;background:transparent;color:var(--text2);transition:all .15s;}
+.tab.active{background:var(--bg3);color:var(--text);border:.5px solid var(--border);}
+.metrics-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:1.25rem;}
+.metric{background:var(--bg2);border:.5px solid var(--border);border-radius:var(--r);padding:.85rem 1rem;}
+.metric-label{font-size:10px;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;}
+.metric-val{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--text);}
+.metric-val.ok{color:var(--green);}.metric-val.warn{color:var(--yellow);}.metric-val.danger{color:var(--red);}
+.metric-sub{font-size:10px;color:var(--text2);margin-top:3px;}
+.layout{display:grid;grid-template-columns:360px 1fr;gap:1.25rem;align-items:start;}
+@media(max-width:960px){.layout{grid-template-columns:1fr;}}
+.col-right{min-width:0;overflow:hidden;}
+.col-right>*{margin-bottom:1.25rem;}
+.col-right>*:last-child{margin-bottom:0;}
+.card{background:var(--bg2);border:.5px solid var(--border);border-radius:var(--r);padding:1.25rem;margin-bottom:1.25rem;}
+.card:last-child{margin-bottom:0;}
+.section-label{font-family:var(--mono);font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:1rem;}
+.param-row{margin-bottom:1.1rem;}
+.param-row:last-child{margin-bottom:0;}
+.param-label-row{display:flex;justify-content:space-between;margin-bottom:6px;}
+.param-label{font-size:12px;color:var(--text2);}
+.param-val{font-family:var(--mono);font-size:13px;color:var(--text);}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;background:var(--bg3);outline:none;cursor:pointer;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--green);cursor:pointer;border:2px solid var(--bg2);transition:transform .15s;}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2);}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--green);cursor:pointer;border:2px solid var(--bg2);}
+.days-ticks{display:flex;justify-content:space-between;margin-top:4px;}
+.days-ticks span{font-family:var(--mono);font-size:9px;color:var(--text2);opacity:.6;width:16px;text-align:center;}
+.days-ticks span.half{opacity:.25;font-size:8px;}
+.gt{width:100%;border-collapse:collapse;}
+#week-grid-table{table-layout:fixed;font-size:11px;}
+#week-grid-table td, #week-grid-table th{padding:4px 4px;overflow:hidden;}
+#hc-line-table{table-layout:fixed;font-size:11px;}
+#hc-line-table td, #hc-line-table th{padding:4px 5px;overflow:hidden;white-space:nowrap;}
+#hc-weekly-table{table-layout:fixed;font-size:11px;}
+#hc-weekly-table td, #hc-weekly-table th{padding:4px 4px;overflow:hidden;}
+.gt th{font-family:var(--mono);font-size:10px;color:var(--text2);font-weight:400;padding:0 5px 8px;text-align:left;border-bottom:.5px solid var(--border);}
+.gt th.c{text-align:center;}
+.gt td{padding:5px 5px;vertical-align:middle;border-bottom:.5px solid var(--border);font-size:11px;}
+.gt tr:last-child td{border-bottom:none;}
+.gt td.c{text-align:center;}
+.gt .tot td{background:var(--bg3);font-family:var(--mono);font-weight:500;border-top:.5px solid rgba(255,255,255,0.12);}
+.ni{width:100%;font-family:var(--font);font-size:13px;padding:5px 8px;border:.5px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--text);}
+.numi{width:100%;font-family:var(--mono);font-size:13px;font-weight:500;padding:5px 6px;border:.5px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--text);text-align:center;}
+.ni:focus,.numi:focus{outline:none;border-color:var(--green);}
+.numi::placeholder{color:var(--text2);opacity:.55;}
+.numi::-webkit-outer-spin-button,.numi::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.numi[type=number]{-moz-appearance:textfield;}
+.si{font-family:var(--mono);font-size:11px;padding:4px 6px;border:.5px solid var(--border);border-radius:4px;background:var(--bg3);color:var(--text);cursor:pointer;width:100%;}
+.si:focus{outline:none;border-color:var(--green);}
+.wni{width:40px;font-family:var(--mono);font-size:11px;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;background:var(--bg3);color:var(--text);text-align:center;}
+.wni:focus{outline:none;border-color:var(--green);}
+.wni::-webkit-outer-spin-button,.wni::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.wni[type=number]{-moz-appearance:textfield;}
+.bar-track{height:8px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:3px;transition:width .3s;}
+.bar-pct{font-family:var(--mono);font-size:10px;color:var(--text2);margin-top:2px;}
+.pill{font-family:var(--mono);font-size:10px;font-weight:500;padding:3px 8px;border-radius:20px;white-space:nowrap;}
+.pill-ok{background:var(--green-bg);color:var(--green-l);}
+.pill-warn{background:var(--yellow-bg);color:var(--yellow);}
+.pill-danger{background:var(--red-bg);color:var(--red);}
+.pg-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;flex-shrink:0;vertical-align:middle;}
+.pg-demand-row{display:grid;grid-template-columns:100px 1fr 70px;gap:8px;align-items:center;margin-bottom:10px;}
+.pg-demand-row:last-child{margin-bottom:0;}
+.pg-name{display:flex;align-items:center;font-size:12px;color:var(--text2);}
+.pg-stat{font-family:var(--mono);font-size:10px;min-width:80px;text-align:right;}
+.del-btn{background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:4px 6px;border-radius:4px;transition:color .15s,background .15s;}
+.del-btn:hover{color:var(--red);background:var(--red-bg);}
+.add-btn{margin-top:12px;display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:12px;color:var(--text2);padding:6px 12px;border:.5px solid var(--border);border-radius:5px;background:transparent;cursor:pointer;transition:color .15s,border-color .15s;}
+.add-btn:hover{color:var(--green);border-color:var(--green);}
+.chart-legend{display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:var(--text2);}
+.chart-legend span{display:flex;align-items:center;gap:5px;}
+.legend-dot{width:10px;height:10px;border-radius:2px;display:inline-block;}
+.view-panel{display:none;}
+.view-panel.active{display:block;}
+.footer{margin-top:2rem;padding-top:1rem;border-top:.5px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--text2);display:flex;justify-content:space-between;}
+.divider{height:.5px;background:var(--border);margin:1rem 0;}
+.info-text{font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:1rem;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <span class="logo">LineSight</span>
+    <span style="color:var(--border);font-size:18px;">|</span>
+    <span class="header-title">Monthly Capacity Planner</span>
+  </div>
+  <div class="month-nav">
+    <button class="nav-btn" onclick="changeMonth(-1)">&#8592;</button>
+    <span class="month-label" id="month-label"></span>
+    <button class="nav-btn" onclick="changeMonth(1)">&#8594;</button>
+  </div>
+</div>
+
+<div class="metrics-strip" id="metrics-strip"></div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('weekly')">Weekly View</button>
+  <button class="tab"        onclick="switchTab('monthly')">Monthly Summary</button>
+  <button class="tab"        onclick="switchTab('backlog')">Backlog Analysis</button>
+  <button class="tab"        onclick="switchTab('demand')">Product Groups</button>
+  <button class="tab"        onclick="switchTab('headcount')">Headcount</button>
+  <button class="tab"        onclick="switchTab('chart')">Charts</button>
+</div>
+
+<!-- ══ WEEKLY ══ -->
+<div class="view-panel active" id="panel-weekly">
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="section-label">Base Parameters</div>
+        <div class="param-row">
+          <div class="param-label-row"><span class="param-label">Shifts / day</span><span class="param-val" id="shifts-out">2</span></div>
+          <input type="range" id="shifts" min="1" max="3" step="1" value="2">
+        </div>
+        <div class="param-row">
+          <div class="param-label-row"><span class="param-label">Shift length</span><span class="param-val" id="shiftlen-out">8 h</span></div>
+          <input type="range" id="shiftlen" min="6" max="12" step="1" value="8">
+        </div>
+        <div class="param-row">
+          <div class="param-label-row"><span class="param-label">OEE (base)</span><span class="param-val" id="oee-out">72%</span></div>
+          <input type="range" id="oee" min="40" max="95" step="1" value="72">
+        </div>
+        <div class="param-row">
+          <div class="param-label-row"><span class="param-label">Working days / week</span><span class="param-val" id="days-out">5</span></div>
+          <input type="range" id="days" min="1" max="7" step="0.5" value="5">
+          <div class="days-ticks" id="days-ticks"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-label">Production Lines</div>
+        <table class="gt">
+          <thead><tr>
+            <th style="width:46px;">Line</th>
+            <th class="c" style="width:50px;">Cap.(u/h)</th>
+            <th class="c" style="width:46px;" title="Line OEE %. Leave empty to use the base OEE slider. Weekly OEE overrides scale all lines proportionally.">OEE%</th>
+            <th class="c" style="width:54px;" title="Operators per shift">HC/shift</th>
+            <th class="c" style="width:50px;" title="Fixed daily staff">HC/day</th>
+            <th style="min-width:84px;">Product group</th>
+            <th style="width:22px;"></th>
+          </tr></thead>
+          <tbody id="lines-body"></tbody>
+        </table>
+        <button class="add-btn" onclick="addLine()">+ Add line</button>
+      </div>
+      <div class="card">
+        <div class="section-label">Holidays &amp; maintenance — <span id="cal-month-label"></span></div>
+        <p class="info-text">Dutch public holidays are added automatically for each year and are fully editable — delete any of them or add extra days (maintenance, bridge days, shutdowns). Each weekday event reduces that week's default working days; a manual Days value in the weekly grid still wins.</p>
+        <div id="cal-list"></div>
+        <div class="divider"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <input type="date" id="cal-date" class="ni" style="color-scheme:dark;">
+          <select id="cal-type" class="si">
+            <option value="maint">Maintenance / shutdown</option>
+            <option value="holiday">Holiday / bridge day</option>
+          </select>
+        </div>
+        <input type="text" id="cal-label" class="ni" placeholder="Label (e.g. Line A overhaul, bridge day)" style="margin-top:8px;">
+        <button class="add-btn" onclick="addCalEvent()">+ Add day</button>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="card">
+        <div class="section-label">Weekly breakdown — <span id="weekly-month-label"></span></div>
+        <div style="overflow-x:auto;"><table class="gt" id="week-grid-table"></table></div>
+      </div>
+      <div class="card">
+        <div class="section-label">Line utilisation</div>
+        <table class="gt" id="line-util-table"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MONTHLY ══ -->
+<div class="view-panel" id="panel-monthly">
+  <div class="card">
+    <div class="section-label">Monthly summary — <span id="monthly-title"></span></div>
+    <div style="overflow-x:auto;"><table class="gt" id="month-table"></table></div>
+  </div>
+  <div class="card" style="margin-top:1.25rem;">
+    <div class="section-label">6-month forecast</div>
+    <div class="chart-legend">
+      <span><span class="legend-dot" style="background:var(--green);"></span>Capacity</span>
+      <span><span class="legend-dot" style="background:var(--blue);"></span>Demand</span>
+    </div>
+    <div style="position:relative;height:200px;"><canvas id="monthChart"></canvas></div>
+  </div>
+</div>
+
+<!-- ══ BACKLOG ══ -->
+<div class="view-panel" id="panel-backlog">
+  <div class="metrics-strip" id="bl-strip" style="margin-bottom:1.25rem;"></div>
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="section-label">Opening backlog — by product group</div>
+        <p class="info-text">
+          <strong>Opening backlog</strong> = unfulfilled demand carried into this month from earlier periods, per product group.<br>
+          Weekly backlog = max(0, previous backlog + demand − capacity). Free capacity in a week works the backlog down. The value next to each input shows that group's projected month-end backlog.
+        </p>
+        <div id="bl-open-grid"></div>
+        <div class="divider"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:11px;color:var(--text2);">Total opening backlog</span>
+          <span id="bl-open-total" style="font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);"></span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-label">Backlog by line — month end</div>
+        <p class="info-text">Each product group's opening backlog is allocated to its own lines by demand share. Each line's backlog rolls week to week against its own capacity.</p>
+        <table class="gt" id="bl-line-table"></table>
+      </div>
+      <div class="card">
+        <div class="section-label">Recovery calculator</div>
+        <p class="info-text">Pick a deadline — the plan is projected forward (across months) and if backlog remains, the calculator shows how many extra shifts or weekend days are needed to clear it in time.</p>
+        <div class="param-row">
+          <div class="param-label-row"><span class="param-label">Deadline</span></div>
+          <input type="date" id="rc-date" class="ni" style="color-scheme:dark;" onchange="rcDeadline=this.value;render()">
+        </div>
+        <div id="rc-output"></div>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="card">
+        <div class="section-label">Weekly backlog waterfall — <span id="bl-month-label"></span></div>
+        <div style="overflow-x:auto;"><table class="gt" id="bl-week-table"></table></div>
+      </div>
+      <div class="card">
+        <div class="section-label">Backlog trend — net weekly balance vs. cumulative backlog</div>
+        <div class="chart-legend">
+          <span><span class="legend-dot" style="background:var(--green);"></span>Net (cap − dem)</span>
+          <span><span class="legend-dot" style="background:var(--red);border-radius:50%;"></span>Backlog</span>
+        </div>
+        <div style="position:relative;height:220px;"><canvas id="blChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="section-label">6-month backlog projection</div>
+        <p class="info-text" style="margin-bottom:.75rem;">Month-end backlog carried forward month to month, using each month's planned capacity and demand.</p>
+        <div style="position:relative;height:200px;"><canvas id="blMoChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DEMAND / PRODUCT GROUPS ══ -->
+<div class="view-panel" id="panel-demand">
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="section-label">Monthly demand — by product group</div>
+        <p class="info-text">Enter the planned monthly demand per product group (units/month). The system distributes this proportionally across assigned lines by capacity share.</p>
+        <div id="pg-demand-grid"></div>
+        <div class="divider"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:11px;color:var(--text2);">Total planned demand</span>
+          <span id="pg-total" style="font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);"></span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-label">Demand source</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;">
+            <input type="radio" name="demMode" value="pg" checked onchange="demandMode=this.value;render()" style="margin-top:2px;">
+            <span><strong>Product group demand</strong><br><span style="color:var(--text2);font-size:11px;">Calculated from the monthly values entered above</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;">
+            <input type="radio" name="demMode" value="rate" onchange="demandMode=this.value;render()" style="margin-top:2px;">
+            <span><strong>Line-level rate (u/h)</strong><br><span style="color:var(--text2);font-size:11px;">Demand calculated from each line's u/h rate</span></span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="card">
+        <div class="section-label">Product group summary — <span id="pg-summary-month"></span></div>
+        <div style="overflow-x:auto;"><table class="gt" id="pg-summary-table"></table></div>
+      </div>
+      <div class="card">
+        <div class="section-label">Demand distribution</div>
+        <div style="position:relative;height:230px;"><canvas id="pgChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ HEADCOUNT ══ -->
+<div class="view-panel" id="panel-headcount">
+  <div class="metrics-strip" id="hc-strip" style="margin-bottom:1.25rem;"></div>
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="section-label">Workforce availability</div>
+        <p class="info-text">Compare the planned labor-hour requirement with the operators actually available. Available hours = operators × (contract hrs ÷ 5) × working days, reduced by the absence rate. Leave operators at 0 to disable the check.</p>
+        <div class="param-row">
+          <div class="param-label-row"><span class="param-label">Available operators (headcount)</span></div>
+          <input class="numi" type="number" id="wf-ops" min="0" max="9999" placeholder="0 = off" oninput="workforce.ops=+this.value||0;render()">
+        </div>
+        <div class="param-row">
+          <div class="param-label-row"><span class="param-label">Contract hours / week</span></div>
+          <input class="numi" type="number" id="wf-contract" min="1" max="80" oninput="workforce.contract=+this.value||40;render()">
+        </div>
+        <div class="param-row">
+          <div class="param-label-row"><span class="param-label">Absence rate % (sickness, vacation)</span></div>
+          <input class="numi" type="number" id="wf-abs" min="0" max="60" oninput="workforce.absence=+this.value||0;render()">
+        </div>
+      </div>
+      <div class="card" style="margin-top:1.25rem;">
+        <div class="section-label">Line detail — <span id="hc-month-label"></span></div>
+        <p class="info-text">
+          <strong>HC/shift</strong> = rotating operators (multiplied by shifts/day).<br>
+          <strong>HC/day</strong> = fixed daily staff: supervisor, technician, QC (counted once per day regardless of shifts).
+        </p>
+        <table class="gt" id="hc-line-table"></table>
+      </div>
+      <div class="card" style="margin-top:1.25rem;">
+        <div class="section-label">labor hrs by line — shift vs. daily</div>
+        <div style="position:relative;height:200px;"><canvas id="hcLineChart"></canvas></div>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="card">
+        <div class="section-label">Weekly Labor hour requirement by line</div>
+        <p class="info-text" style="margin-bottom:.75rem;">Each cell shows total labor hrs. Sub-line: <em>Xs</em> = shift, <em>Xd</em> = daily fixed.</p>
+        <div style="overflow-x:auto;"><table class="gt" id="hc-weekly-table"></table></div>
+      </div>
+      <div class="card">
+        <div class="section-label">Weekly coverage — required vs. available</div>
+        <div style="overflow-x:auto;"><table class="gt" id="hc-cover-table"></table></div>
+      </div>
+      <div class="card">
+        <div class="section-label">Weekly Labor hour trend</div>
+        <div style="position:relative;height:180px;"><canvas id="hcWkChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CHART ══ -->
+<div class="view-panel" id="panel-chart">
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="section-label">Weekly capacity vs. demand — <span id="chart-month-label"></span></div>
+    <div class="chart-legend">
+      <span><span class="legend-dot" style="background:var(--green);"></span>Capacity</span>
+      <span><span class="legend-dot" style="background:var(--blue);"></span>Demand</span>
+      <span><span class="legend-dot" style="background:var(--yellow);border-radius:50%;"></span>Util %</span>
+    </div>
+    <div style="position:relative;height:260px;"><canvas id="weekChart"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="section-label">Line utilisation — monthly average</div>
+    <div style="position:relative;height:200px;"><canvas id="lineChart"></canvas></div>
+  </div>
+</div>
+
+<!-- ══ AI ANALYSIS ══ -->
+<div id="ai-panel" style="display:none;margin-top:1.25rem;">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+      <div class="section-label" style="margin-bottom:0;">AI Analysis — <span id="ai-month-label"></span></div>
+      <button onclick="document.getElementById('ai-panel').style.display='none'" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;padding:2px 6px;">✕</button>
+    </div>
+    <div id="ai-output" style="font-size:13px;line-height:1.8;color:var(--text);min-height:60px;white-space:pre-wrap;"></div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>LineSight — Monthly Capacity Planner <span id="save-indicator" style="color:var(--green);font-size:10px;margin-left:8px;opacity:0;transition:opacity .5s;">✓ saved</span></span>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <button onclick="exportCSV()" title="Export the active tab's data for the selected month" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">⬇ Export CSV</button>
+    <button onclick="resetData()" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">↺ Reset</button>
+    <button onclick="runAI()" id="ai-btn" style="display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;padding:6px 14px;border-radius:5px;border:.5px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">
+      ✦ AI Analysis
+    </button>
+  </div>
+  <span id="footer-date"></span>
+</div>
+
+<script>
+// ════════════════════════════════
+// CONSTANTS
+// ════════════════════════════════
+const PGS = [
+  {key:'soda',   label:'Soda maker', color:'#1D9E75'},
+  {key:'bottle', label:'Bottle',     color:'#378ADD'},
+  {key:'rental', label:'Rental',     color:'#EF9F27'},
+  {key:'ecom',   label:'Ecom',       color:'#A855F7'},
+  {key:'access', label:'Accessory',  color:'#E24B4A'},
+];
+const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// ════════════════════════════════
+// STATE
+// ════════════════════════════════
+let lines = [
+  {name:'Line A', cap:450, demand:360, pg:'soda',   hc:4, hcDay:1},
+  {name:'Line B', cap:300, demand:310, pg:'bottle',  hc:3, hcDay:1},
+  {name:'Line C', cap:200, demand:140, pg:'rental',  hc:2, hcDay:0},
+];
+let pgDemand   = {};   // [monthKey][pgKey] = number
+let weekOvr    = {};   // [monthKey][wi] = {days,oee,demFactor}
+let blOpen     = {};   // [monthKey][pgKey] = opening backlog (units)
+let calEvents  = {};   // ['YYYY-MM-DD'] = {label, type:'holiday'|'maint'}
+let calSeeded  = [];   // years already auto-seeded with NL public holidays
+let workforce  = {ops:0, contract:40, absence:8}; // available operators; ops=0 disables the coverage check
+let rcDeadline = null; // 'YYYY-MM-DD' — backlog recovery calculator deadline
+let demandMode = 'pg'; // 'pg' | 'rate'
+let curDate    = new Date(); curDate.setDate(1);
+let charts     = {};
+let activeTab  = 'weekly';
+
+// ════════════════════════════════
+// HELPERS
+// ════════════════════════════════
+const getP = () => ({
+  shifts:   +document.getElementById('shifts').value,
+  shiftlen: +document.getElementById('shiftlen').value,
+  oee:      +document.getElementById('oee').value / 100,
+  days:     +document.getElementById('days').value,
+});
+const mk    = d => `${d.getFullYear()}-${d.getMonth()}`;
+const hu    = n => Math.round(n).toLocaleString('en-GB');
+const pct   = (a,b) => b===0 ? 0 : Math.round(a/b*100);
+const bCol  = p => p>95?'#E24B4A':p>80?'#EF9F27':'#1D9E75';
+const tCol  = p => p>95?'var(--red)':p>80?'var(--yellow)':'var(--green)';
+const pCls  = p => p>95?'pill-danger':p>80?'pill-warn':'pill-ok';
+const pTxt  = p => p>95?'Overloaded':p>80?'High':'OK';
+const mCls  = p => p>95?'danger':p>80?'warn':'ok';
+const fmtD  = v => v%1===0?String(v):v.toFixed(1);
+const pg    = key => PGS.find(g=>g.key===key)||PGS[0];
+
+function getOvr(m,wi,f,def){ return (weekOvr[m]?.[wi]?.[f]!==undefined)?weekOvr[m][wi][f]:def; }
+function setOvr(m,wi,f,v){ if(!weekOvr[m])weekOvr[m]={}; if(!weekOvr[m][wi])weekOvr[m][wi]={}; weekOvr[m][wi][f]=v; }
+function getPGD(m,k){ return pgDemand[m]?.[k]||0; }
+function setPGD(m,k,v){ if(!pgDemand[m])pgDemand[m]={}; pgDemand[m][k]=v; }
+function getBLO(m,k){ const o=blOpen[m]; return (o&&typeof o==='object')?(o[k]||0):0; }
+function setBLO(m,k,v){ if(!blOpen[m]||typeof blOpen[m]!=='object')blOpen[m]={}; blOpen[m][k]=Math.max(0,v); }
+function totBLOpen(m){ return PGS.reduce((s,g)=>s+getBLO(m,g.key),0); }
+
+// ════════════════════════════════
+// CALENDAR — NL holidays & maintenance days
+// ════════════════════════════════
+const dk=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+// Anonymous Gregorian algorithm
+function easterOf(y){
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),
+        g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,
+        l=(32+2*e+2*i-h-k)%7,mm=Math.floor((a+11*h+22*l)/451);
+  const mo=Math.floor((h+l-7*mm+114)/31), da=((h+l-7*mm+114)%31)+1;
+  return new Date(y,mo-1,da);
+}
+function nlHolidays(y){
+  const E=easterOf(y), off=n=>{const d=new Date(E); d.setDate(E.getDate()+n); return d;};
+  let kd=new Date(y,3,27); if(kd.getDay()===0) kd.setDate(26); // Koningsdag: 26 April if the 27th is a Sunday
+  return [
+    [new Date(y,0,1),'Nieuwjaarsdag'],
+    [off(-2),'Goede Vrijdag'],
+    [E,'Eerste Paasdag'],
+    [off(1),'Tweede Paasdag'],
+    [kd,'Koningsdag'],
+    [new Date(y,4,5),'Bevrijdingsdag'],
+    [off(39),'Hemelvaartsdag'],
+    [off(49),'Eerste Pinksterdag'],
+    [off(50),'Tweede Pinksterdag'],
+    [new Date(y,11,25),'Eerste Kerstdag'],
+    [new Date(y,11,26),'Tweede Kerstdag'],
+  ];
+}
+// Seed a year's NL holidays once; after that the user is free to delete/edit them
+function seedYear(y){
+  if(calSeeded.includes(y)) return;
+  nlHolidays(y).forEach(([d,label])=>{ if(!calEvents[dk(d)]) calEvents[dk(d)]={label,type:'holiday'}; });
+  calSeeded.push(y);
+}
+// Calendar events on a weekday (Mon–Fri) of this week, inside the given month (0-based)
+function wkHolidays(week,month){
+  const out=[];
+  for(let d=new Date(week.start); d<=week.end; d.setDate(d.getDate()+1)){
+    if(d.getMonth()!==month||d.getDay()===0||d.getDay()===6) continue;
+    seedYear(d.getFullYear());
+    const ev=calEvents[dk(d)];
+    if(ev) out.push({key:dk(d),date:new Date(d),label:ev.label,type:ev.type});
+  }
+  return out;
+}
+// Effective default working days of a week: min(workdays, slider) minus
+// calendar events, unless a manual weekly Days override is set (that wins)
+function effDays(week,m,wi){
+  const p=getP();
+  const month=+m.split('-')[1];
+  const def=Math.max(0,Math.min(week.workDays,p.days)-wkHolidays(week,month).length);
+  return getOvr(m,wi,'days',def);
+}
+
+function weeksOf(year,month){
+  const out=[], last=new Date(year,month+1,0);
+  let cur=new Date(year,month,1);
+  const dow=cur.getDay(); cur.setDate(cur.getDate()+(dow===0?-6:1-dow));
+  let n=1;
+  while(cur<=last){
+    const s=new Date(cur), e=new Date(cur); e.setDate(e.getDate()+6);
+    let wd=0;
+    for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1))
+      if(d.getMonth()===month&&d.getDay()>0&&d.getDay()<6) wd++;
+    out.push({label:`W${n}`,start:s,end:e,workDays:wd,wi:n-1});
+    cur.setDate(cur.getDate()+7); n++;
+  }
+  return out;
+}
+
+// Cap of one line for one week
+// Line OEE: line.oee if set, else the base slider. A weekly OEE override
+// scales every line proportionally (weekOee/baseOee), so lines without
+// their own OEE behave exactly as before.
+function lWkCap(line,week,m,wi){
+  const p=getP();
+  const days=effDays(week,m,wi);
+  const base=Math.round(p.oee*100);
+  const wk  =getOvr(m,wi,'oee',base);
+  const oee =(line.oee??base)*(wk/base)/100;
+  return Math.round(line.cap*oee*p.shiftlen*p.shifts*days);
+}
+// Total cap all lines for one week
+function wkCap(week,m,wi){ return lines.reduce((s,l)=>s+lWkCap(l,week,m,wi),0); }
+
+// Monthly cap of one line
+function lMoCap(line,weeks,m){ return weeks.reduce((s,w,wi)=>s+lWkCap(line,w,m,wi),0); }
+
+// Demand of one line for one week
+function lWkDem(line,week,m,wi,weeks){
+  if(demandMode==='rate'){
+    // use line's own u/h rate
+    const p=getP();
+    const days=effDays(week,m,wi);
+    const demF=getOvr(m,wi,'demFactor',100)/100;
+    return Math.round(line.demand*p.shiftlen*p.shifts*days*demF);
+  }
+  // pg mode: distribute PG monthly demand to this line by cap share, then weekly by week cap share
+  const pgKey=line.pg;
+  const monthDem=getPGD(m,pgKey);
+  if(monthDem===0) return 0;
+  // all lines in same PG
+  const pgLines=lines.filter(l=>l.pg===pgKey);
+  const pgMoCap=pgLines.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
+  if(pgMoCap===0) return 0;
+  const lMC=lMoCap(line,weeks,m);
+  const lineShare=lMC/pgMoCap;           // this line's fraction of PG total cap
+  const lineMoDem=monthDem*lineShare;    // demand allocated to this line this month
+  if(lMC===0) return 0;
+  return Math.round(lineMoDem*(lWkCap(line,week,m,wi)/lMC)); // weekly split by cap proportion
+}
+
+// Total demand all lines for one week
+function wkDem(week,m,wi,weeks){ return lines.reduce((s,l)=>s+lWkDem(l,week,m,wi,weeks),0); }
+
+// ════════════════════════════════
+// HEADCOUNT CALC  (labor hours)
+// ════════════════════════════════
+// Labor hours for one line for one week:
+//   shift operators : hc/shift × shifts/day × shiftlen × working days
+//   fixed daily     : hcDay × shiftlen × working days (one shift-length per day)
+function lWkHC(line, week, m, wi){
+  const p = getP();
+  const days = effDays(week,m,wi);
+  const shift = (line.hc||0) * p.shifts * p.shiftlen * days;
+  const daily = (line.hcDay||0) * p.shiftlen * days;
+  return Math.round(shift + daily);
+}
+// shift-only labor hours (for breakdown)
+function lWkHCshift(line, week, m, wi){
+  const p = getP();
+  const days = effDays(week,m,wi);
+  return Math.round((line.hc||0) * p.shifts * p.shiftlen * days);
+}
+// day-only labor hours (for breakdown)
+function lWkHCday(line, week, m, wi){
+  const p = getP();
+  const days = effDays(week,m,wi);
+  return Math.round((line.hcDay||0) * p.shiftlen * days);
+}
+// Monthly labor hrs for one line
+function lMoHC(line, weeks, m){
+  return weeks.reduce((s,w,wi) => s + lWkHC(line,w,m,wi), 0);
+}
+// Total labor hrs all lines for one week
+function wkHC(week, m, wi){
+  return lines.reduce((s,l) => s + lWkHC(l,week,m,wi), 0);
+}
+
+// ════════════════════════════════
+// HEADCOUNT VIEW
+// ════════════════════════════════
+function renderHeadcount(){
+  const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
+  const weeks=weeksOf(year,month);
+  const p=getP();
+  document.getElementById('hc-month-label').textContent=`${MN[month]} ${year}`;
+
+  // ── Workforce inputs (focus-guarded) ──
+  [['wf-ops',workforce.ops||''],['wf-contract',workforce.contract],['wf-abs',workforce.absence]].forEach(([id,v])=>{
+    const el=document.getElementById(id);
+    if(document.activeElement!==el) el.value=v;
+  });
+  const wfSet=workforce.ops>0;
+  const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
+  const wkReq  =weeks.map((w,wi)=>wkHC(w,m,wi));
+  const wkAvail=weeks.map((w,wi)=>Math.round(workforce.ops*dailyH*absF*effDays(w,m,wi)));
+
+  // ── Monthly summary strip ──
+  let totFTE=0, totShift=0, totDay=0;
+  lines.forEach(l=>{ totFTE+=lMoHC(l,weeks,m); totShift+=weeks.reduce((s,w,wi)=>s+lWkHCshift(l,w,m,wi),0); totDay+=weeks.reduce((s,w,wi)=>s+lWkHCday(l,w,m,wi),0); });
+  const avgWk=weeks.length?Math.round(totFTE/weeks.length):0;
+  const totAvail=wkAvail.reduce((s,v)=>s+v,0);
+  const cov=totFTE>0?Math.round(totAvail/totFTE*100):0;
+  const covCls=cov>=100?'ok':cov>=90?'warn':'danger';
+  document.getElementById('hc-strip').innerHTML=`
+    <div class="metric"><div class="metric-label">Total labor hrs / month</div><div class="metric-val ok">${hu(totFTE)}</div><div class="metric-sub">${lines.length} lines</div></div>
+    <div class="metric"><div class="metric-label">Shift operators</div><div class="metric-val">${hu(totShift)}</div><div class="metric-sub">labor hrs</div></div>
+    <div class="metric"><div class="metric-label">Fixed daily staff</div><div class="metric-val">${hu(totDay)}</div><div class="metric-sub">labor hrs</div></div>
+    <div class="metric"><div class="metric-label">Avg labor hrs / week</div><div class="metric-val">${hu(avgWk)}</div><div class="metric-sub">${weeks.length} weeks</div></div>
+    <div class="metric"><div class="metric-label">Peak week</div><div class="metric-val warn">${hu(Math.max(...wkReq))}</div><div class="metric-sub">labor hrs</div></div>
+    <div class="metric"><div class="metric-label">Available operators</div><div class="metric-val">${wfSet?workforce.ops:'—'}</div><div class="metric-sub">${wfSet?(Math.round(dailyH*absF*10)/10)+' eff. h/day each':'set in Workforce card'}</div></div>
+    <div class="metric"><div class="metric-label">Coverage</div><div class="metric-val ${wfSet?covCls:''}">${wfSet?cov+'%':'—'}</div><div class="metric-sub">available vs. required hrs</div></div>
+  `;
+
+  // ── Weekly coverage table ──
+  const ct=document.getElementById('hc-cover-table'); ct.innerHTML='';
+  if(!wfSet){
+    ct.innerHTML='<tr><td style="font-size:11px;color:var(--text2);border:none;">Set the available operators in the Workforce availability card to enable the coverage check.</td></tr>';
+  } else {
+    const chr=ct.createTHead().insertRow();
+    ['Wk','Days','Required hrs','Available hrs','Coverage','Ops needed','Status'].forEach((h,i)=>{
+      const th=document.createElement('th'); th.textContent=h;
+      th.className=i===0?'':'c'; th.style.whiteSpace='nowrap'; chr.appendChild(th);
+    });
+    const cb=ct.createTBody();
+    let peakNeed=0;
+    weeks.forEach((w,wi)=>{
+      const days=effDays(w,m,wi);
+      const req=wkReq[wi], avail=wkAvail[wi];
+      const wcov=req>0?Math.round(avail/req*100):null;
+      const need=days>0?Math.ceil(req/(dailyH*absF*days)):0;
+      const gap=need-workforce.ops;
+      peakNeed=Math.max(peakNeed,need);
+      const tr=cb.insertRow();
+      tr.innerHTML=`
+        <td style="font-family:var(--mono);font-weight:500;">${w.label}</td>
+        <td class="c" style="font-family:var(--mono);color:var(--text2);">${fmtD(days)}</td>
+        <td class="c" style="font-family:var(--mono);">${hu(req)}</td>
+        <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(avail)}</td>
+        <td class="c" style="font-family:var(--mono);font-weight:500;color:${wcov===null?'var(--text2)':wcov>=100?'var(--green)':wcov>=90?'var(--yellow)':'var(--red)'};">${wcov===null?'—':wcov+'%'}</td>
+        <td class="c" style="font-family:var(--mono);">${need}</td>
+        <td class="c"><span class="pill ${gap>0?'pill-danger':'pill-ok'}">${gap>0?'Short '+gap+' op':'OK'}</span></td>
+      `;
+    });
+    const trT=cb.insertRow(); trT.className='tot';
+    const gapM=peakNeed-workforce.ops;
+    trT.innerHTML=`
+      <td colspan="2">MONTH</td>
+      <td class="c">${hu(totFTE)}</td>
+      <td class="c" style="color:var(--green);">${hu(totAvail)}</td>
+      <td class="c" style="color:${cov>=100?'var(--green)':cov>=90?'var(--yellow)':'var(--red)'};">${cov}%</td>
+      <td class="c">${peakNeed}</td>
+      <td class="c"><span class="pill ${gapM>0?'pill-danger':'pill-ok'}">${gapM>0?'Hire '+gapM:'OK'}</span></td>
+    `;
+  }
+
+  // ── Weekly labor hrs table by line ──
+  const wt=document.getElementById('hc-weekly-table'); wt.innerHTML='';
+  const wh=wt.createTHead().insertRow();
+  ['Wk','Period','Days', ...lines.map(l=>l.name), 'Total'].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    th.className=i<2?'':'c';
+    if(i===0) th.style.width='28px';
+    else if(i===1) th.style.width='80px';
+    else if(i===2) th.style.width='36px';
+    else if(i===2+lines.length) th.style.width='60px';
+    else th.style.width='80px';
+    if(i>=3&&i<3+lines.length) th.style.color=pg(lines[i-3].pg).color;
+    wh.appendChild(th);
+  });
+  const wb=wt.createTBody();
+  const colTots=lines.map(()=>0), colShift=lines.map(()=>0), colDay=lines.map(()=>0);
+  let grandTot=0;
+  weeks.forEach((w,wi)=>{
+    const fmt=d=>d.toLocaleDateString('en-GB',{month:'numeric',day:'numeric'});
+    const days=effDays(w,m,wi);
+    const lineHCs=lines.map(l=>lWkHC(l,w,m,wi));
+    const lineS=lines.map(l=>lWkHCshift(l,w,m,wi));
+    const lineD=lines.map(l=>lWkHCday(l,w,m,wi));
+    const tot=lineHCs.reduce((s,v)=>s+v,0);
+    lineHCs.forEach((v,i)=>{colTots[i]+=v; colShift[i]+=lineS[i]; colDay[i]+=lineD[i];});
+    grandTot+=tot;
+    const tr=wb.insertRow();
+    tr.innerHTML=`
+      <td style="font-family:var(--mono);font-weight:500;">${w.label}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text2);">${fmt(w.start)}–${fmt(w.end)}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--text2);">${days}</td>
+      ${lineHCs.map((v,i)=>`
+        <td class="c">
+          <div style="font-family:var(--mono);font-weight:500;color:${pg(lines[i].pg).color};">${v}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text2);">${lineS[i]}s+${lineD[i]}d</div>
+        </td>`).join('')}
+      <td class="c" style="font-family:var(--mono);font-weight:500;color:var(--green-l);">${tot}</td>
+    `;
+  });
+  // total row
+  const ttr=wb.insertRow(); ttr.className='tot';
+  ttr.innerHTML=`
+    <td colspan="3">TOTAL</td>
+    ${colTots.map((v,i)=>`<td class="c"><div style="color:${pg(lines[i].pg).color};">${v}</div><div style="font-size:10px;color:var(--text2);">${colShift[i]}s+${colDay[i]}d</div></td>`).join('')}
+    <td class="c" style="color:var(--green);">${grandTot}</td>
+  `;
+
+  // ── Line detail table ──
+  const lt=document.getElementById('hc-line-table'); lt.innerHTML='';
+  const lh=lt.createTHead().insertRow();
+  ['Line','Group','HC/sh','HC/d','Mo. hrs'].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    const widths=['56px','100px','54px','50px','86px'];
+    th.style.width=widths[i];
+    th.className=i<2?'':'c'; lh.appendChild(th);
+  });
+  const lb=lt.createTBody();
+  lines.forEach(l=>{
+    const g=pg(l.pg);
+    const moFTE=lMoHC(l,weeks,m);
+    const moS=weeks.reduce((s,w,wi)=>s+lWkHCshift(l,w,m,wi),0);
+    const moD=weeks.reduce((s,w,wi)=>s+lWkHCday(l,w,m,wi),0);
+    const tr=lb.insertRow();
+    tr.innerHTML=`
+      <td style="font-size:12px;">${l.name}</td>
+      <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;">${l.hc||0}</td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;">${l.hcDay||0}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);font-weight:500;">${hu(moFTE)}</td>
+    `;
+  });
+  const ttr2=lb.insertRow(); ttr2.className='tot';
+  const totS=lines.reduce((s,l)=>s+weeks.reduce((ws,w,wi)=>ws+lWkHCshift(l,w,m,wi),0),0);
+  const totD=lines.reduce((s,l)=>s+weeks.reduce((ws,w,wi)=>ws+lWkHCday(l,w,m,wi),0),0);
+  ttr2.innerHTML=`
+    <td colspan="4">TOTAL</td>
+    <td class="c" style="color:var(--green);">${hu(totFTE)}</td>
+  `;
+
+  // ── Stacked bar chart: shift vs day Labor hrs by line ──
+  destroyChart('hcLineChart');
+  charts['hcLineChart']=new Chart(document.getElementById('hcLineChart').getContext('2d'),{
+    type:'bar',
+    data:{
+      labels:lines.map(l=>l.name),
+      datasets:[
+        {label:'Shift operators',data:lines.map(l=>weeks.reduce((s,w,wi)=>s+lWkHCshift(l,w,m,wi),0)),
+          backgroundColor:lines.map(l=>pg(l.pg).color+'CC'),borderColor:lines.map(l=>pg(l.pg).color),borderWidth:1},
+        {label:'Fixed daily',data:lines.map(l=>weeks.reduce((s,w,wi)=>s+lWkHCday(l,w,m,wi),0)),
+          backgroundColor:'rgba(122,130,153,0.3)',borderColor:'rgba(122,130,153,0.6)',borderWidth:1},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      scales:{
+        x:{stacked:true,ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}},
+        y:{stacked:true,ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'},title:{display:true,text:'labor hrs',color:'#7a8299',font:{size:10}}}
+      }}
+  });
+
+  // ── Weekly total labor hour line chart ──
+  destroyChart('hcWkChart');
+  charts['hcWkChart']=new Chart(document.getElementById('hcWkChart').getContext('2d'),{
+    type:'line',
+    data:{
+      labels:weeks.map(w=>w.label),
+      datasets:[
+        {label:'Total labor hrs',data:wkReq,
+          borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,0.1)',borderWidth:2,pointRadius:4,fill:true},
+        {label:'Shift only',data:weeks.map((w,wi)=>lines.reduce((s,l)=>s+lWkHCshift(l,w,m,wi),0)),
+          borderColor:'#378ADD',backgroundColor:'transparent',borderWidth:1.5,pointRadius:3,borderDash:[4,3]},
+        ...(wfSet?[{label:'Available hrs',data:wkAvail,
+          borderColor:'#EF9F27',backgroundColor:'transparent',borderWidth:2,pointRadius:3,borderDash:[6,4]}]:[]),
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      scales:{
+        y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
+        x:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+      }}
+  });
+}
+
+// ════════════════════════════════
+// BACKLOG ANALYSIS
+// ════════════════════════════════
+// Weekly backlog series: bl_w = max(0, bl_{w-1} + demand_w - capacity_w)
+function backlogSeries(m,weeks,opening){
+  let bl=opening;
+  return weeks.map((w,wi)=>{
+    const cap=wkCap(w,m,wi), dem=wkDem(w,m,wi,weeks);
+    bl=Math.max(0, bl+dem-cap);
+    return {cap, dem, net:cap-dem, bl};
+  });
+}
+
+// PG opening backlog rolled week by week against that PG's own lines → month-end value
+function pgBacklogClose(m,weeks,gKey){
+  const pgL=lines.filter(l=>l.pg===gKey);
+  let bl=getBLO(m,gKey);
+  weeks.forEach((w,wi)=>{
+    const cap=pgL.reduce((s,l)=>s+lWkCap(l,w,m,wi),0);
+    const dem=pgL.reduce((s,l)=>s+lWkDem(l,w,m,wi,weeks),0);
+    bl=Math.max(0, bl+dem-cap);
+  });
+  return bl;
+}
+// A line's share of its PG's opening backlog (demand share, falling back to capacity share),
+// rolled week by week against the line's own capacity
+function lineBacklog(m,weeks,line){
+  const pgL=lines.filter(x=>x.pg===line.pg);
+  const pgOpen=getBLO(m,line.pg);
+  const pgDem=pgL.reduce((s,x)=>s+weeks.reduce((ws,w,wi)=>ws+lWkDem(x,w,m,wi,weeks),0),0);
+  const pgCap=pgL.reduce((s,x)=>s+lMoCap(x,weeks,m),0);
+  const moDem=weeks.reduce((s,w,wi)=>s+lWkDem(line,w,m,wi,weeks),0);
+  const open=pgDem>0?Math.round(pgOpen*moDem/pgDem)
+            :pgCap>0?Math.round(pgOpen*lMoCap(line,weeks,m)/pgCap):0;
+  let bl=open;
+  weeks.forEach((w,wi)=>{ bl=Math.max(0, bl+lWkDem(line,w,m,wi,weeks)-lWkCap(line,w,m,wi)); });
+  return {open, close:bl};
+}
+
+// Roll the total backlog forward from the current month, week by week,
+// until the deadline. Returns the projected backlog and where it first cleared.
+function backlogAtDate(deadline){
+  let carry=totBLOpen(mk(curDate));
+  let clearedAt=null, hadBL=carry>0;
+  const start=new Date(curDate.getFullYear(),curDate.getMonth(),1);
+  if(deadline<start) return {bl:carry, clearedAt:null, invalid:true};
+  for(let off=0; off<24; off++){
+    const d=new Date(start.getFullYear(), start.getMonth()+off, 1);
+    if(d>deadline) break;
+    const m2=mk(d), wks=weeksOf(d.getFullYear(), d.getMonth());
+    for(let wi=0; wi<wks.length; wi++){
+      const w=wks[wi];
+      if(w.start>deadline) return {bl:carry, clearedAt};
+      const cap=wkCap(w,m2,wi), dem=wkDem(w,m2,wi,wks);
+      const prev=carry;
+      carry=Math.max(0, carry+dem-cap);
+      if(carry>0) hadBL=true;
+      if(hadBL&&carry===0&&prev>0&&!clearedAt)
+        clearedAt=`${w.label} ${MN[d.getMonth()].slice(0,3)} ${d.getFullYear()}`;
+      if(w.end>=deadline) return {bl:carry, clearedAt};
+    }
+  }
+  return {bl:carry, clearedAt};
+}
+// Units produced by ONE extra shift on one day, all lines at their own OEE
+function extraShiftUnits(){
+  const p=getP(), base=Math.round(p.oee*100);
+  return lines.reduce((s,l)=>s+l.cap*((l.oee??base)/100)*p.shiftlen,0);
+}
+
+function renderBacklog(){
+  const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
+  const weeks=weeksOf(year,month);
+  document.getElementById('bl-month-label').textContent=`${MN[month]} ${year}`;
+
+  const opening=totBLOpen(m);
+
+  // ── Opening backlog input grid (per product group) ──
+  const pgClose={};
+  PGS.forEach(g=>{ pgClose[g.key]=pgBacklogClose(m,weeks,g.key); });
+  const grid=document.getElementById('bl-open-grid');
+  if(!grid.contains(document.activeElement)){
+    grid.innerHTML='';
+    PGS.forEach(g=>{
+      const val=getBLO(m,g.key);
+      const cls=pgClose[g.key];
+      const hasLines=lines.some(l=>l.pg===g.key);
+      const row=document.createElement('div'); row.className='pg-demand-row';
+      row.innerHTML=`
+        <div class="pg-name"><span class="pg-dot" style="background:${g.color};"></span>${g.label}</div>
+        <input class="numi" type="number" value="${val}" min="0" max="99999999"
+          oninput="setBLO('${m}','${g.key}',+this.value||0);render()">
+        <div class="pg-stat" style="color:${!hasLines&&val>0?'var(--yellow)':cls>0?'var(--red)':'var(--text2)'};">
+          ${!hasLines&&val>0?'no line':'→ '+hu(cls)}
+        </div>
+      `;
+      grid.appendChild(row);
+    });
+  }
+  document.getElementById('bl-open-total').textContent=hu(opening)+' units';
+
+  const series=backlogSeries(m,weeks,opening);
+  const closing=series.length?series[series.length-1].bl:opening;
+  const peak=Math.max(opening,...series.map(s=>s.bl));
+  const peakWi=series.findIndex(s=>s.bl===peak);
+  const wksInBL=series.filter(s=>s.bl>0).length;
+  // first week the backlog is fully worked off (after having been >0)
+  let clearedWk='—';
+  if(opening>0||series.some(s=>s.bl>0)){
+    const ci=series.findIndex((s,i)=>s.bl===0&&(i===0?opening>0:series[i-1].bl>0));
+    clearedWk=ci>=0?weeks[ci].label:'not this month';
+  }
+
+  // ── Metrics strip ──
+  document.getElementById('bl-strip').innerHTML=`
+    <div class="metric"><div class="metric-label">Opening backlog</div><div class="metric-val">${hu(opening)}</div><div class="metric-sub">units carried in</div></div>
+    <div class="metric"><div class="metric-label">Closing backlog</div><div class="metric-val ${closing>0?'danger':'ok'}">${hu(closing)}</div><div class="metric-sub">units at month end</div></div>
+    <div class="metric"><div class="metric-label">Peak backlog</div><div class="metric-val ${peak>0?'warn':'ok'}">${hu(peak)}</div><div class="metric-sub">${peak>0?(peakWi>=0?weeks[peakWi].label:'opening'):'—'}</div></div>
+    <div class="metric"><div class="metric-label">Weeks in backlog</div><div class="metric-val ${wksInBL>0?'warn':'ok'}">${wksInBL} / ${weeks.length}</div><div class="metric-sub">weeks ending with backlog</div></div>
+    <div class="metric"><div class="metric-label">Recovery</div><div class="metric-val" style="font-size:15px;">${clearedWk}</div><div class="metric-sub">backlog cleared</div></div>
+  `;
+
+  // ── Weekly waterfall table ──
+  const tbl=document.getElementById('bl-week-table'); tbl.innerHTML='';
+  const hr=tbl.createTHead().insertRow();
+  ['Wk','Period','Cap.','Demand','Net','Backlog','BL % cap','Status'].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    th.className=i<2?'':'c'; th.style.whiteSpace='nowrap'; hr.appendChild(th);
+  });
+  const body=tbl.createTBody();
+  const fmt=d=>d.toLocaleDateString('en-GB',{month:'numeric',day:'numeric'});
+  weeks.forEach((w,wi)=>{
+    const s=series[wi];
+    const blPct=pct(s.bl,s.cap);
+    const tr=body.insertRow();
+    tr.innerHTML=`
+      <td style="font-family:var(--mono);font-weight:500;">${w.label}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text2);">${fmt(w.start)}–${fmt(w.end)}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(s.cap)}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(s.dem)}</td>
+      <td class="c" style="font-family:var(--mono);color:${s.net<0?'var(--red)':'var(--text2)'};">${s.net>=0?'+':''}${hu(s.net)}</td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;color:${s.bl>0?'var(--red)':'var(--green)'};">${hu(s.bl)}</td>
+      <td class="c" style="font-family:var(--mono);color:${s.bl>0?'var(--yellow)':'var(--text2)'};">${blPct}%</td>
+      <td class="c"><span class="pill ${s.bl>0?'pill-danger':'pill-ok'}">${s.bl>0?'Backlog':'Clear'}</span></td>
+    `;
+  });
+  const totNet=series.reduce((s,v)=>s+v.net,0);
+  const trT=body.insertRow(); trT.className='tot';
+  trT.innerHTML=`
+    <td colspan="4">MONTH TOTAL</td>
+    <td class="c" style="color:${totNet<0?'var(--red)':'var(--text2)'};">${totNet>=0?'+':''}${hu(totNet)}</td>
+    <td class="c" style="color:${closing>0?'var(--red)':'var(--green)'};">${hu(closing)}</td>
+    <td colspan="2"></td>
+  `;
+
+  // ── Per-line backlog table ──
+  const lt=document.getElementById('bl-line-table'); lt.innerHTML='';
+  const lh=lt.createTHead().insertRow();
+  ['Line','Group','Open','Close','Status'].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    th.className=i<2?'':'c'; lh.appendChild(th);
+  });
+  const lb=lt.createTBody(); let lineCloseSum=0, lineOpenSum=0;
+  lines.forEach(l=>{
+    const g=pg(l.pg);
+    const {open:lOpen, close:bl}=lineBacklog(m,weeks,l);
+    lineOpenSum+=lOpen; lineCloseSum+=bl;
+    const tr=lb.insertRow();
+    tr.innerHTML=`
+      <td style="font-size:12px;">${l.name}</td>
+      <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
+      <td class="c" style="font-family:var(--mono);color:var(--text2);">${hu(lOpen)}</td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;color:${bl>0?'var(--red)':'var(--green)'};">${hu(bl)}</td>
+      <td class="c"><span class="pill ${bl>0?'pill-danger':'pill-ok'}">${bl>0?'Backlog':'Clear'}</span></td>
+    `;
+  });
+  const ltr=lb.insertRow(); ltr.className='tot';
+  ltr.innerHTML=`
+    <td colspan="2">TOTAL</td>
+    <td class="c" style="color:var(--text2);">${hu(lineOpenSum)}</td>
+    <td class="c" style="color:${lineCloseSum>0?'var(--red)':'var(--green)'};">${hu(lineCloseSum)}</td>
+    <td></td>
+  `;
+
+  // ── Recovery calculator ──
+  const rcInput=document.getElementById('rc-date');
+  if(!rcDeadline) rcDeadline=dk(new Date(year,month+1,0)); // default: end of selected month
+  if(document.activeElement!==rcInput) rcInput.value=rcDeadline;
+  const [ry,rmo,rda]=rcDeadline.split('-').map(Number);
+  const deadline=new Date(ry,rmo-1,rda);
+  const rcOut=document.getElementById('rc-output');
+  const res=backlogAtDate(deadline);
+  const uShift=extraShiftUnits();
+  const p2=getP();
+  const dstr=deadline.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  if(res.invalid){
+    rcOut.innerHTML=`<div class="info-text" style="margin:0;">The deadline is before ${MN[month]} ${year} — pick a later date.</div>`;
+  } else if(opening===0&&series.every(s=>s.bl===0)&&res.bl===0){
+    rcOut.innerHTML=`<div style="font-size:12px;color:var(--green);">✓ No backlog in the plan — nothing to recover.</div>`;
+  } else if(res.bl===0){
+    rcOut.innerHTML=`<div style="font-size:12px;color:var(--green);">✓ Cleared with the current plan${res.clearedAt?` by <strong>${res.clearedAt}</strong>`:''} — no extra capacity needed by ${dstr}.</div>`;
+  } else if(uShift<=0){
+    rcOut.innerHTML=`<div class="info-text" style="margin:0;">No line capacity defined — cannot calculate extra shifts.</div>`;
+  } else {
+    const uDay=uShift*p2.shifts;
+    const nShift=Math.ceil(res.bl/uShift), nDay=Math.ceil(res.bl/uDay);
+    const hcShiftSum=lines.reduce((s,l)=>s+(l.hc||0),0);
+    const hcDaySum=lines.reduce((s,l)=>s+(l.hcDay||0),0);
+    const laborShift=hcShiftSum*p2.shiftlen;                      // one extra shift-day (no extra daily staff)
+    const laborDay=(hcShiftSum*p2.shifts+hcDaySum)*p2.shiftlen;   // one full extra day incl. fixed daily staff
+    const wksLeft=Math.max(1,Math.ceil((deadline-new Date(year,month,1))/(7*864e5)));
+    rcOut.innerHTML=`
+      <div style="font-size:12px;margin-bottom:10px;">Projected backlog on <strong>${dstr}</strong>:
+        <span style="font-family:var(--mono);font-weight:500;color:var(--red);">${hu(res.bl)} units</span></div>
+      <div style="background:var(--bg3);border-radius:6px;padding:10px 12px;margin-bottom:8px;">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:3px;">Option A — extra shifts on working days</div>
+        <div style="font-family:var(--mono);font-size:13px;">${nShift} shift${nShift>1?'s':''} <span style="color:var(--text2);font-size:11px;">(≈ ${Math.ceil(nShift/wksLeft)}/week · +${hu(nShift*laborShift)} labor hrs)</span></div>
+      </div>
+      <div style="background:var(--bg3);border-radius:6px;padding:10px 12px;">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:3px;">Option B — full weekend days (${p2.shifts} shifts)</div>
+        <div style="font-family:var(--mono);font-size:13px;">${nDay} day${nDay>1?'s':''} <span style="color:var(--text2);font-size:11px;">(≈ ${Math.ceil(nDay/wksLeft)}/week · +${hu(nDay*laborDay)} labor hrs)</span></div>
+      </div>
+      <div style="font-size:10px;color:var(--text2);margin-top:8px;">1 extra shift ≈ ${hu(uShift)} units · 1 extra day ≈ ${hu(uDay)} units (current lines &amp; OEE)</div>
+    `;
+  }
+
+  // ── Weekly trend chart: net bars + cumulative backlog line ──
+  destroyChart('blChart');
+  charts['blChart']=new Chart(document.getElementById('blChart').getContext('2d'),{
+    type:'bar',
+    data:{labels:weeks.map(w=>w.label),datasets:[
+      {label:'Net (cap − dem)',data:series.map(s=>s.net),
+        backgroundColor:series.map(s=>s.net<0?'rgba(226,75,74,0.4)':'rgba(29,158,117,0.4)'),
+        borderColor:series.map(s=>s.net<0?'#E24B4A':'#1D9E75'),borderWidth:1},
+      {label:'Backlog',data:series.map(s=>s.bl),type:'line',
+        borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.12)',borderWidth:2,pointRadius:4,fill:true},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
+        x:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+      }}
+  });
+
+  // ── 6-month projection: chain month-end backlog forward ──
+  const moLabels=[], moBL=[], moNet=[];
+  let carry=opening;
+  for(let off=0;off<6;off++){
+    const d=new Date(year,month+off,1), m2=mk(d);
+    const wks=weeksOf(d.getFullYear(),d.getMonth());
+    const ser=backlogSeries(m2,wks,carry);
+    const net=ser.reduce((s,v)=>s+v.net,0);
+    carry=ser.length?ser[ser.length-1].bl:carry;
+    moLabels.push(`${MN[d.getMonth()].slice(0,3)} ${d.getFullYear()}`);
+    moBL.push(carry); moNet.push(net);
+  }
+  destroyChart('blMoChart');
+  charts['blMoChart']=new Chart(document.getElementById('blMoChart').getContext('2d'),{
+    type:'bar',
+    data:{labels:moLabels,datasets:[
+      {label:'Month-end backlog',data:moBL,
+        backgroundColor:'rgba(226,75,74,0.4)',borderColor:'#E24B4A',borderWidth:1},
+      {label:'Net balance',data:moNet,type:'line',
+        borderColor:'#1D9E75',backgroundColor:'transparent',borderWidth:2,pointRadius:4,borderDash:[4,3]},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      scales:{
+        y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
+        x:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}
+      }}
+  });
+}
+
+// ════════════════════════════════
+// CALENDAR VIEW
+// ════════════════════════════════
+function renderCalendar(){
+  const year=curDate.getFullYear(), month=curDate.getMonth();
+  seedYear(year);
+  document.getElementById('cal-month-label').textContent=`${MN[month]} ${year}`;
+  const list=document.getElementById('cal-list');
+  const evs=Object.entries(calEvents)
+    .map(([k,v])=>{const [y,mo,da]=k.split('-').map(Number); return {k,date:new Date(y,mo-1,da),label:v.label,type:v.type};})
+    .filter(e=>e.date.getFullYear()===year&&e.date.getMonth()===month)
+    .sort((a,b)=>a.date-b.date);
+  if(!evs.length){
+    list.innerHTML='<div class="info-text" style="margin:0;">No holidays or maintenance days this month.</div>';
+    return;
+  }
+  list.innerHTML=evs.map(e=>{
+    const wknd=e.date.getDay()===0||e.date.getDay()===6;
+    const col=e.type==='holiday'?'var(--yellow)':'var(--red)';
+    const dstr=e.date.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit'});
+    const wd=e.date.toLocaleDateString('en-GB',{weekday:'short'});
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:.5px solid var(--border);">
+      <span class="pg-dot" style="background:${col};"></span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text2);width:76px;flex-shrink:0;">${dstr} ${wd}</span>
+      <span style="font-size:12px;flex:1;${wknd?'color:var(--text2);':''}">${e.label}${wknd?' <span style="font-size:10px;">(weekend — no effect)</span>':''}</span>
+      <button class="del-btn" onclick="delCalEvent('${e.k}')" title="Remove">✕</button>
+    </div>`;
+  }).join('');
+}
+function addCalEvent(){
+  const d=document.getElementById('cal-date').value;
+  if(!d){ document.getElementById('cal-date').focus(); return; }
+  const type=document.getElementById('cal-type').value;
+  const label=document.getElementById('cal-label').value.trim()||(type==='holiday'?'Holiday':'Maintenance / shutdown');
+  calEvents[d]={label,type};
+  document.getElementById('cal-label').value='';
+  render();
+}
+function delCalEvent(k){ delete calEvents[k]; render(); }
+
+// ════════════════════════════════
+// NAV & TABS
+// ════════════════════════════════
+function changeMonth(d){ curDate.setMonth(curDate.getMonth()+d); render(); }
+function switchTab(name){
+  activeTab=name;
+  ['weekly','monthly','backlog','demand','headcount','chart'].forEach((n,i)=>
+    document.querySelectorAll('.tab')[i].classList.toggle('active',n===name));
+  document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+  render();
+}
+
+// ════════════════════════════════
+// METRICS STRIP
+// ════════════════════════════════
+function renderMetrics(){
+  const year=curDate.getFullYear(),month=curDate.getMonth(),m=mk(curDate);
+  const weeks=weeksOf(year,month);
+  const p=getP();
+  let totCap=0,totDem=0;
+  weeks.forEach((w,wi)=>{ totCap+=wkCap(w,m,wi); totDem+=wkDem(w,m,wi,weeks); });
+  const ut=pct(totDem,totCap), sl=totCap-totDem;
+  document.getElementById('metrics-strip').innerHTML=`
+    <div class="metric"><div class="metric-label">Monthly capacity</div><div class="metric-val">${hu(totCap)}</div><div class="metric-sub">units — ${weeks.length} weeks</div></div>
+    <div class="metric"><div class="metric-label">Monthly demand</div><div class="metric-val">${hu(totDem)}</div><div class="metric-sub">units</div></div>
+    <div class="metric"><div class="metric-label">Utilisation</div><div class="metric-val ${mCls(ut)}">${ut}%</div><div class="metric-sub">${ut>95?'⚠ overloaded':ut>80?'high':'normal'}</div></div>
+    <div class="metric"><div class="metric-label">Free capacity</div><div class="metric-val ${sl<0?'danger':'ok'}">${sl>=0?'+':''}${hu(sl)}</div><div class="metric-sub">units / month</div></div>
+    <div class="metric"><div class="metric-label">OEE (base)</div><div class="metric-val">${Math.round(p.oee*100)}%</div><div class="metric-sub">${p.shifts} × ${p.shiftlen}h</div></div>
+  `;
+}
+
+// ════════════════════════════════
+// LINES TABLE
+// ════════════════════════════════
+function renderLines(){
+  const body=document.getElementById('lines-body'); body.innerHTML='';
+  lines.forEach((l,i)=>{
+    const opts=PGS.map(g=>`<option value="${g.key}"${g.key===l.pg?' selected':''}>${g.label}</option>`).join('');
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td><input class="ni" value="${l.name}" oninput="lines[${i}].name=this.value;render()"></td>
+      <td class="c"><input class="numi" type="number" value="${l.cap}" min="1" max="99999" oninput="lines[${i}].cap=+this.value||0;render()"></td>
+      <td class="c"><input class="numi" type="number" value="${l.oee??''}" placeholder="${Math.round(getP().oee*100)}" min="30" max="100" title="Line OEE % (empty = base ${Math.round(getP().oee*100)}%)" oninput="lines[${i}].oee=this.value===''?null:+this.value;render()"></td>
+      <td class="c"><input class="numi" type="number" value="${l.hc||0}" min="0" max="999" title="Operators per shift" oninput="lines[${i}].hc=+this.value||0;render()"></td>
+      <td class="c"><input class="numi" type="number" value="${l.hcDay||0}" min="0" max="999" title="Fixed daily staff (supervisor, technician…)" oninput="lines[${i}].hcDay=+this.value||0;render()"></td>
+      <td><select class="si" onchange="lines[${i}].pg=this.value;render()">${opts}</select></td>
+      <td><button class="del-btn" onclick="delLine(${i})">✕</button></td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+// ════════════════════════════════
+// WEEKLY GRID
+// ════════════════════════════════
+function renderWeeklyGrid(){
+  const year=curDate.getFullYear(),month=curDate.getMonth(),m=mk(curDate);
+  const weeks=weeksOf(year,month);
+  document.getElementById('weekly-month-label').textContent=`${MN[month]} ${year}`;
+  const tbl=document.getElementById('week-grid-table'); tbl.innerHTML='';
+  const hd=tbl.createTHead(), hr=hd.insertRow();
+  ['Wk','Period','Days','Cap.','Demand','Util%','Slack','OEE%','Df%'].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    const widths=['24px','72px','42px','65px','65px','42px','65px','50px','44px'];
+    th.style.width=widths[i];
+    th.style.whiteSpace='nowrap';
+    th.className=i<2?'':'c'; hr.appendChild(th);
+  });
+  const body=tbl.createTBody(); let sC=0,sD=0;
+  weeks.forEach((w,wi)=>{
+    const p=getP();
+    const cD=effDays(w,m,wi);
+    const cO=getOvr(m,wi,'oee',Math.round(p.oee*100));
+    const cF=getOvr(m,wi,'demFactor',100);
+    const hols=wkHolidays(w,month);
+    const cap=wkCap(w,m,wi), dem=wkDem(w,m,wi,weeks);
+    const ut=pct(dem,cap), sl=cap-dem;
+    sC+=cap; sD+=dem;
+    const fmt=d=>d.toLocaleDateString('en-GB',{month:'numeric',day:'numeric'});
+    const tr=body.insertRow();
+    tr.innerHTML=`
+      <td style="font-family:var(--mono);font-weight:500;">${w.label}${hols.length?` <span style="color:var(--yellow);font-size:9px;vertical-align:middle;" title="${hols.map(h=>h.date.getDate()+': '+h.label).join(', ')}">●</span>`:''}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text2);">${fmt(w.start)}–${fmt(w.end)}</td>
+      <td class="c"><input class="wni" type="number" value="${cD}" min="0" max="7" step="0.5" ${hols.length?`title="${hols.length} calendar day(s) deducted: ${hols.map(h=>h.label).join(', ')}"`:''} oninput="setOvr('${m}',${wi},'days',+this.value);render()"></td>
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(cap)}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(dem)}</td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;color:${tCol(ut)};">${ut}%</td>
+      <td class="c" style="font-family:var(--mono);color:${sl<0?'var(--red)':'var(--text2)'};">${sl>=0?'+':''}${hu(sl)}</td>
+      <td class="c"><input class="wni" type="number" value="${cO}" min="30" max="100" oninput="setOvr('${m}',${wi},'oee',+this.value);render()" style="width:36px;"><span style="font-size:9px;color:var(--text2);">%</span></td>
+      <td class="c"><input class="wni" type="number" value="${cF}" min="0" max="300" oninput="setOvr('${m}',${wi},'demFactor',+this.value);render()" style="width:36px;"><span style="font-size:9px;color:var(--text2);">%</span></td>
+    `;
+  });
+  const totUt=pct(sD,sC), totSl=sC-sD;
+  const tr=body.insertRow(); tr.className='tot';
+  tr.innerHTML=`
+    <td colspan="3">TOTAL</td>
+    <td class="c" style="color:var(--green);">${hu(sC)}</td>
+    <td class="c" style="color:var(--blue);">${hu(sD)}</td>
+    <td class="c" style="color:${tCol(totUt)};">${totUt}%</td>
+    <td class="c" style="color:${totSl<0?'var(--red)':'var(--text2)'};">${totSl>=0?'+':''}${hu(totSl)}</td>
+    <td colspan="2"></td>
+  `;
+  renderLineUtil(weeks,m);
+}
+
+function renderLineUtil(weeks,m){
+  const tbl=document.getElementById('line-util-table'); tbl.innerHTML='';
+  const hd=tbl.createTHead(), hr=hd.insertRow();
+  ['Line','Product group','OEE%','Monthly cap.','Monthly demand','Util%','Status'].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    th.className=i<2?'':'c'; hr.appendChild(th);
+  });
+  const body=tbl.createTBody();
+  lines.forEach(l=>{
+    const g=pg(l.pg);
+    let cap=0,dem=0;
+    weeks.forEach((w,wi)=>{ cap+=lWkCap(l,w,m,wi); dem+=lWkDem(l,w,m,wi,weeks); });
+    const ut=pct(dem,cap);
+    const tr=body.insertRow();
+    tr.innerHTML=`
+      <td style="font-size:13px;">${l.name}</td>
+      <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
+      <td class="c" style="font-family:var(--mono);color:${l.oee!=null?'var(--text)':'var(--text2)'};" title="${l.oee!=null?'line-specific':'inherited from base'}">${l.oee??Math.round(getP().oee*100)}%</td>
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(cap)}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(dem)}</td>
+      <td class="c">
+        <div style="width:80px;margin:0 auto;">
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.min(ut,100)}%;background:${bCol(ut)};"></div></div>
+          <div class="bar-pct">${ut}%</div>
+        </div>
+      </td>
+      <td class="c"><span class="pill ${pCls(ut)}">${pTxt(ut)}</span></td>
+    `;
+  });
+}
+
+// ════════════════════════════════
+// DEMAND / PG VIEW
+// ════════════════════════════════
+function renderDemandView(){
+  const year=curDate.getFullYear(),month=curDate.getMonth(),m=mk(curDate);
+  const weeks=weeksOf(year,month);
+  document.getElementById('pg-summary-month').textContent=`${MN[month]} ${year}`;
+
+  // input grid
+  const grid=document.getElementById('pg-demand-grid'); grid.innerHTML='';
+  let grand=0;
+  PGS.forEach(g=>{
+    const val=getPGD(m,g.key); grand+=val;
+    const pgCap=lines.filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,weeks,m),0);
+    const ut=pct(val,pgCap);
+    const row=document.createElement('div'); row.className='pg-demand-row';
+    row.innerHTML=`
+      <div class="pg-name"><span class="pg-dot" style="background:${g.color};"></span>${g.label}</div>
+      <input class="numi" type="number" value="${val}" min="0" max="99999999"
+        oninput="setPGD('${m}','${g.key}',+this.value);render()">
+      <div class="pg-stat" style="color:${pgCap>0?tCol(ut):'var(--text2)'};">
+        ${pgCap>0?ut+'% cap.':lines.filter(l=>l.pg===g.key).length===0?'no line':'0 cap.'}
+      </div>
+    `;
+    grid.appendChild(row);
+  });
+  document.getElementById('pg-total').textContent=hu(grand)+' units';
+
+  // summary table
+  const tbl=document.getElementById('pg-summary-table'); tbl.innerHTML='';
+  const hd=tbl.createTHead(), hr=hd.insertRow();
+  ['Product group','Lines','Monthly cap.','Monthly demand','Util%','Free cap.'].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    th.className=i<2?'':'c'; hr.appendChild(th);
+  });
+  const body=tbl.createTBody(); let tC=0,tD=0;
+  PGS.forEach(g=>{
+    const pgL=lines.filter(l=>l.pg===g.key);
+    const cap=pgL.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
+    const dem=getPGD(m,g.key);
+    const ut=pct(dem,cap), sl=cap-dem;
+    tC+=cap; tD+=dem;
+    const tr=body.insertRow();
+    tr.innerHTML=`
+      <td><span class="pg-dot" style="background:${g.color};"></span>${g.label}</td>
+      <td style="font-size:11px;color:var(--text2);">${pgL.length?pgL.map(l=>l.name).join(', '):'—'}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);">${pgL.length?hu(cap):'—'}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(dem)}</td>
+      <td class="c"><span style="font-family:var(--mono);color:${pgL.length?tCol(ut):'var(--text2)'};">${pgL.length?ut+'%':'—'}</span></td>
+      <td class="c" style="font-family:var(--mono);color:${sl<0?'var(--red)':'var(--text2)'};">${pgL.length?(sl>=0?'+':'')+hu(sl):'—'}</td>
+    `;
+  });
+  const trT=body.insertRow(); trT.className='tot';
+  const totUt=pct(tD,tC);
+  trT.innerHTML=`
+    <td colspan="2">TOTAL</td>
+    <td class="c" style="color:var(--green);">${hu(tC)}</td>
+    <td class="c" style="color:var(--blue);">${hu(tD)}</td>
+    <td class="c" style="color:${tCol(totUt)};">${totUt}%</td>
+    <td class="c" style="color:${tC-tD<0?'var(--red)':'var(--text2)'};">${tC-tD>=0?'+':''}${hu(tC-tD)}</td>
+  `;
+
+  // doughnut chart
+  destroyChart('pgChart');
+  const dems=PGS.map(g=>getPGD(m,g.key));
+  if(dems.reduce((s,v)=>s+v,0)>0){
+    charts['pgChart']=new Chart(document.getElementById('pgChart').getContext('2d'),{
+      type:'doughnut',
+      data:{labels:PGS.map(g=>g.label),datasets:[{
+        data:dems,
+        backgroundColor:PGS.map(g=>g.color+'BB'),
+        borderColor:PGS.map(g=>g.color),
+        borderWidth:1
+      }]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'right',labels:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}}}
+    });
+  }
+}
+
+// ════════════════════════════════
+// MONTHLY TABLE
+// ════════════════════════════════
+function renderMonthlyTable(){
+  const year=curDate.getFullYear(),month=curDate.getMonth();
+  document.getElementById('monthly-title').textContent=`${MN[month]} ${year} — 6 months`;
+  const tbl=document.getElementById('month-table'); tbl.innerHTML='';
+  const hd=tbl.createTHead(), hr=hd.insertRow();
+  ['Month','Weeks','Capacity','Demand','Util%','Free cap.'].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    th.className=i===0?'':'c'; hr.appendChild(th);
+  });
+  const body=tbl.createTBody(); const cA=[],dA=[],lA=[];
+  for(let off=0;off<6;off++){
+    const d=new Date(year,month+off,1), mn=d.getMonth(), yr=d.getFullYear(), m2=mk(d);
+    const weeks=weeksOf(yr,mn); let cap=0,dem=0;
+    weeks.forEach((w,wi)=>{ cap+=wkCap(w,m2,wi); dem+=wkDem(w,m2,wi,weeks); });
+    const ut=pct(dem,cap),sl=cap-dem;
+    cA.push(cap); dA.push(dem); lA.push(`${MN[mn].slice(0,3)} ${yr}`);
+    const tr=body.insertRow();
+    if(off===0) tr.style.background='rgba(29,158,117,0.06)';
+    tr.innerHTML=`
+      <td style="font-size:12px;font-weight:${off===0?500:400};">${MN[mn]} ${yr}${off===0?' ●':''}</td>
+      <td class="c" style="font-family:var(--mono);">${weeks.length}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(cap)}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(dem)}</td>
+      <td class="c"><span style="font-family:var(--mono);font-weight:500;color:${tCol(ut)};">${ut}%</span></td>
+      <td class="c" style="font-family:var(--mono);color:${sl<0?'var(--red)':'var(--text2)'};">${sl>=0?'+':''}${hu(sl)}</td>
+    `;
+  }
+  destroyChart('monthChart');
+  charts['monthChart']=new Chart(document.getElementById('monthChart').getContext('2d'),{type:'bar',
+    data:{labels:lA,datasets:[
+      {label:'Kapacitás',data:cA,backgroundColor:'rgba(29,158,117,0.4)',borderColor:'#1D9E75',borderWidth:1},
+      {label:'Igény',    data:dA,backgroundColor:'rgba(55,138,221,0.4)',borderColor:'#378ADD',borderWidth:1},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
+              x:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}}}
+  });
+}
+
+// ════════════════════════════════
+// CHART VIEW
+// ════════════════════════════════
+function renderCharts(){
+  const year=curDate.getFullYear(),month=curDate.getMonth(),m=mk(curDate);
+  const weeks=weeksOf(year,month);
+  document.getElementById('chart-month-label').textContent=`${MN[month]} ${year}`;
+  const lbls=weeks.map(w=>w.label);
+  const caps=weeks.map((w,wi)=>wkCap(w,m,wi));
+  const dems=weeks.map((w,wi)=>wkDem(w,m,wi,weeks));
+  const uts =weeks.map((w,wi)=>pct(dems[wi],caps[wi]));
+
+  destroyChart('weekChart');
+  charts['weekChart']=new Chart(document.getElementById('weekChart').getContext('2d'),{type:'bar',
+    data:{labels:lbls,datasets:[
+      {label:'Kapacitás',data:caps,backgroundColor:'rgba(29,158,117,0.4)',borderColor:'#1D9E75',borderWidth:1,yAxisID:'y'},
+      {label:'Igény',    data:dems,backgroundColor:'rgba(55,138,221,0.4)',borderColor:'#378ADD',borderWidth:1,yAxisID:'y'},
+      {label:'Util%',    data:uts, type:'line',borderColor:'#EF9F27',backgroundColor:'rgba(239,159,39,0.1)',borderWidth:2,pointRadius:4,yAxisID:'y2'},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
+        y2:{position:'right',min:0,max:120,ticks:{color:'#EF9F27',font:{size:10,family:'IBM Plex Mono'},callback:v=>v+'%'},grid:{display:false}},
+        x:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}
+      }}
+  });
+
+  const pgColors=lines.map(l=>pg(l.pg).color);
+  const lineUts=lines.map(l=>{
+    let cap=0,dem=0;
+    weeks.forEach((w,wi)=>{cap+=lWkCap(l,w,m,wi); dem+=lWkDem(l,w,m,wi,weeks);});
+    return pct(dem,cap);
+  });
+  destroyChart('lineChart');
+  charts['lineChart']=new Chart(document.getElementById('lineChart').getContext('2d'),{type:'bar',
+    data:{labels:lines.map(l=>l.name),datasets:[{label:'Util%',data:lineUts,
+      backgroundColor:pgColors.map(c=>c+'99'),borderColor:pgColors,borderWidth:1}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        x:{min:0,max:120,ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'},callback:v=>v+'%'},grid:{color:'rgba(255,255,255,0.04)'}},
+        y:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+      }}
+  });
+}
+
+function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+
+// ════════════════════════════════
+// AI ANALYSIS
+// ════════════════════════════════
+async function runAI(){
+  const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
+  const weeks=weeksOf(year,month);
+  const p=getP();
+
+  // Build context summary
+  let summary=`You are a supply chain planning expert. Analyse this production capacity plan and give a concise, actionable assessment.\n\n`;
+  summary+=`MONTH: ${MN[month]} ${year}\n`;
+  summary+=`BASE PARAMETERS: ${p.shifts} shifts/day × ${p.shiftlen}h, OEE ${Math.round(p.oee*100)}%, ${p.days} working days/week\n\n`;
+
+  // Weekly data
+  summary+=`WEEKLY BREAKDOWN:\n`;
+  let totCap=0, totDem=0;
+  weeks.forEach((w,wi)=>{
+    const cap=wkCap(w,m,wi), dem=wkDem(w,m,wi,weeks), ut=pct(dem,cap);
+    totCap+=cap; totDem+=dem;
+    summary+=`  ${w.label}: capacity ${cap.toLocaleString()} units, demand ${dem.toLocaleString()} units, utilisation ${ut}%\n`;
+  });
+  summary+=`  TOTAL: capacity ${totCap.toLocaleString()}, demand ${totDem.toLocaleString()}, utilisation ${pct(totDem,totCap)}%\n\n`;
+
+  // Line data
+  summary+=`PRODUCTION LINES:\n`;
+  lines.forEach(l=>{
+    let cap=0,dem=0;
+    weeks.forEach((w,wi)=>{cap+=lWkCap(l,w,m,wi); dem+=lWkDem(l,w,m,wi,weeks);});
+    const ut=pct(dem,cap);
+    summary+=`  ${l.name} [${pg(l.pg).label}]: capacity ${cap.toLocaleString()} u/month, demand ${dem.toLocaleString()} u/month, utilisation ${ut}%, OEE ${l.oee??Math.round(p.oee*100)}%\n`;
+  });
+
+  // Workforce coverage
+  if(workforce.ops>0){
+    const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
+    let req=0, avail=0;
+    weeks.forEach((w,wi)=>{ req+=wkHC(w,m,wi); avail+=workforce.ops*dailyH*absF*effDays(w,m,wi); });
+    summary+=`\nWORKFORCE: ${workforce.ops} operators available, ${workforce.contract}h/week contract, ${workforce.absence}% absence. Required ${Math.round(req).toLocaleString()} labor hrs vs available ${Math.round(avail).toLocaleString()} labor hrs (coverage ${pct(avail,req)}%).\n`;
+  }
+
+  // PG demand
+  summary+=`\nPRODUCT GROUP DEMAND (${MN[month]}):\n`;
+  PGS.forEach(g=>{
+    const d=getPGD(m,g.key);
+    if(d>0) summary+=`  ${g.label}: ${d.toLocaleString()} units\n`;
+  });
+
+  summary+=`\nPlease provide:\n1. Overall capacity risk assessment (1-2 sentences)\n2. Bottleneck identification — which lines or weeks are critical\n3. Top 3 actionable recommendations\n4. Any demand-capacity mismatches by product group\n\nBe direct and specific. Use bullet points. No generic advice.`;
+
+  // Show panel
+  const panel=document.getElementById('ai-panel');
+  const output=document.getElementById('ai-output');
+  document.getElementById('ai-month-label').textContent=`${MN[month]} ${year}`;
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+  const btn=document.getElementById('ai-btn');
+  btn.textContent='⟳ Analysing...';
+  btn.disabled=true;
+  output.textContent='';
+
+  // Streaming dots while waiting
+  let dots=0;
+  const loader=setInterval(()=>{
+    output.textContent='Analysing capacity data'+''.padEnd((dots%4),'.');
+    dots++;
+  },400);
+
+  try {
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:1000,
+        messages:[{role:'user',content:summary}]
+      })
+    });
+    const data=await res.json();
+    clearInterval(loader);
+    const text=data.content?.map(b=>b.text||'').join('')||'No response received.';
+    // Render with basic markdown-like formatting
+    output.innerHTML=text
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+      .replace(/^#{1,3} (.+)$/gm,'<span style="font-weight:500;color:var(--green-l);">$1</span>')
+      .replace(/^(\d+\.) /gm,'<span style="color:var(--green);">$1</span> ')
+      .replace(/^[•\-] /gm,'<span style="color:var(--text2);">▸</span> ')
+      .replace(/\n/g,'<br>');
+  } catch(err){
+    clearInterval(loader);
+    output.textContent=`Error: ${err.message}`;
+  }
+
+  btn.innerHTML='✦ AI Analysis';
+  btn.disabled=false;
+}
+
+// ════════════════════════════════
+// CSV EXPORT  (exports the active tab's data for the selected month)
+// ════════════════════════════════
+function csvEscape(v){ v=String(v??''); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function downloadCSV(rows,filename){
+  const csv='\uFEFF'+rows.map(r=>r.map(csvEscape).join(';')).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},0);
+}
+function exportCSV(){
+  const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
+  const weeks=weeksOf(year,month), p=getP();
+  const fmt=d=>d.toLocaleDateString('en-GB',{month:'numeric',day:'numeric'});
+  const rows=[];
+  rows.push([`LineSight export — ${MN[month]} ${year}`]);
+  rows.push(['Parameters',`${p.shifts} shifts/day × ${p.shiftlen}h`,`OEE ${Math.round(p.oee*100)}%`,`${fmtD(p.days)} days/week`,`demand mode: ${demandMode}`]);
+  rows.push([]);
+
+  if(activeTab==='weekly'||activeTab==='chart'){
+    rows.push(['WEEKLY BREAKDOWN']);
+    rows.push(['Week','Period','Days','Capacity','Demand','Util %','Slack','OEE %','Demand factor %']);
+    let sC=0,sD=0;
+    weeks.forEach((w,wi)=>{
+      const days=effDays(w,m,wi);
+      const oee=getOvr(m,wi,'oee',Math.round(p.oee*100));
+      const df=getOvr(m,wi,'demFactor',100);
+      const cap=wkCap(w,m,wi), dem=wkDem(w,m,wi,weeks);
+      sC+=cap; sD+=dem;
+      rows.push([w.label,`${fmt(w.start)}–${fmt(w.end)}`,days,cap,dem,pct(dem,cap),cap-dem,oee,df]);
+    });
+    rows.push(['TOTAL','','',sC,sD,pct(sD,sC),sC-sD,'','']);
+    rows.push([]);
+    rows.push(['LINE UTILISATION']);
+    rows.push(['Line','Product group','OEE %','Monthly capacity','Monthly demand','Util %']);
+    lines.forEach(l=>{
+      let cap=0,dem=0;
+      weeks.forEach((w,wi)=>{cap+=lWkCap(l,w,m,wi); dem+=lWkDem(l,w,m,wi,weeks);});
+      rows.push([l.name,pg(l.pg).label,l.oee??Math.round(p.oee*100),cap,dem,pct(dem,cap)]);
+    });
+  }
+  else if(activeTab==='monthly'){
+    rows.push(['6-MONTH SUMMARY']);
+    rows.push(['Month','Weeks','Capacity','Demand','Util %','Free capacity']);
+    for(let off=0;off<6;off++){
+      const d=new Date(year,month+off,1), m2=mk(d);
+      const wks=weeksOf(d.getFullYear(),d.getMonth());
+      let cap=0,dem=0;
+      wks.forEach((w,wi)=>{cap+=wkCap(w,m2,wi); dem+=wkDem(w,m2,wi,wks);});
+      rows.push([`${MN[d.getMonth()]} ${d.getFullYear()}`,wks.length,cap,dem,pct(dem,cap),cap-dem]);
+    }
+  }
+  else if(activeTab==='demand'){
+    rows.push(['PRODUCT GROUP SUMMARY']);
+    rows.push(['Product group','Lines','Monthly capacity','Monthly demand','Util %','Free capacity']);
+    let tC=0,tD=0;
+    PGS.forEach(g=>{
+      const pgL=lines.filter(l=>l.pg===g.key);
+      const cap=pgL.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
+      const dem=getPGD(m,g.key);
+      tC+=cap; tD+=dem;
+      rows.push([g.label,pgL.map(l=>l.name).join(', ')||'—',cap,dem,pct(dem,cap),cap-dem]);
+    });
+    rows.push(['TOTAL','',tC,tD,pct(tD,tC),tC-tD]);
+  }
+  else if(activeTab==='headcount'){
+    rows.push(['HEADCOUNT — LINE DETAIL']);
+    rows.push(['Line','Product group','HC/shift','HC/day','Monthly labor hrs','Shift hrs','Daily hrs']);
+    lines.forEach(l=>{
+      const moS=weeks.reduce((s,w,wi)=>s+lWkHCshift(l,w,m,wi),0);
+      const moD=weeks.reduce((s,w,wi)=>s+lWkHCday(l,w,m,wi),0);
+      rows.push([l.name,pg(l.pg).label,l.hc||0,l.hcDay||0,moS+moD,moS,moD]);
+    });
+    rows.push([]);
+    rows.push(['WEEKLY LABOR HOURS']);
+    rows.push(['Week','Period','Days',...lines.map(l=>l.name),'Total']);
+    weeks.forEach((w,wi)=>{
+      const days=effDays(w,m,wi);
+      const vals=lines.map(l=>lWkHC(l,w,m,wi));
+      rows.push([w.label,`${fmt(w.start)}–${fmt(w.end)}`,days,...vals,vals.reduce((s,v)=>s+v,0)]);
+    });
+    if(workforce.ops>0){
+      const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
+      rows.push([]);
+      rows.push(['WEEKLY COVERAGE',`${workforce.ops} operators`,`${workforce.contract} h/week`,`absence ${workforce.absence}%`]);
+      rows.push(['Week','Days','Required hrs','Available hrs','Coverage %','Ops needed','Gap']);
+      weeks.forEach((w,wi)=>{
+        const days=effDays(w,m,wi);
+        const req=wkHC(w,m,wi);
+        const avail=Math.round(workforce.ops*dailyH*absF*days);
+        const need=days>0?Math.ceil(req/(dailyH*absF*days)):0;
+        rows.push([w.label,days,req,avail,req>0?Math.round(avail/req*100):'',need,Math.max(0,need-workforce.ops)]);
+      });
+    }
+  }
+  else if(activeTab==='backlog'){
+    const opening=totBLOpen(m);
+    const series=backlogSeries(m,weeks,opening);
+    rows.push(['OPENING BACKLOG BY PRODUCT GROUP']);
+    rows.push(['Product group','Opening backlog','Month-end backlog']);
+    PGS.forEach(g=>{ rows.push([g.label,getBLO(m,g.key),pgBacklogClose(m,weeks,g.key)]); });
+    rows.push(['TOTAL',opening,series.length?series[series.length-1].bl:opening]);
+    rows.push([]);
+    rows.push(['WEEKLY BACKLOG WATERFALL']);
+    rows.push(['Week','Period','Capacity','Demand','Net','Backlog','Backlog % of cap']);
+    weeks.forEach((w,wi)=>{
+      const s=series[wi];
+      rows.push([w.label,`${fmt(w.start)}–${fmt(w.end)}`,s.cap,s.dem,s.net,s.bl,pct(s.bl,s.cap)]);
+    });
+    rows.push([]);
+    rows.push(['BACKLOG BY LINE — MONTH END']);
+    rows.push(['Line','Product group','Opening allocation','Closing backlog']);
+    lines.forEach(l=>{
+      const b=lineBacklog(m,weeks,l);
+      rows.push([l.name,pg(l.pg).label,b.open,b.close]);
+    });
+  }
+
+  downloadCSV(rows,`linesight_${activeTab}_${year}-${String(month+1).padStart(2,'0')}.csv`);
+}
+
+// ════════════════════════════════
+// MASTER RENDER
+// ════════════════════════════════
+function save(){
+  try{
+    localStorage.setItem('ls_planner', JSON.stringify({
+      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, rcDeadline,
+      curDate: curDate.toISOString(),
+      sliders: {
+        shifts: document.getElementById('shifts').value,
+        shiftlen: document.getElementById('shiftlen').value,
+        oee: document.getElementById('oee').value,
+        days: document.getElementById('days').value,
+      }
+    }));
+    const ind=document.getElementById('save-indicator');
+    if(ind){ ind.style.opacity='1'; setTimeout(()=>ind.style.opacity='0',1200); }
+  }catch(e){}
+}
+
+function resetData(){
+  if(!confirm('Reset all data to defaults?')) return;
+  localStorage.removeItem('ls_planner');
+  lines=[
+    {name:'Line A',cap:450,demand:360,pg:'soda',   hc:4, hcDay:1},
+    {name:'Line B',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
+    {name:'Line C',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
+  ];
+  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; rcDeadline=null; demandMode='pg';
+  curDate=new Date(); curDate.setDate(1);
+  ['shifts','shiftlen','oee','days'].forEach(id=>{
+    const defaults={shifts:'2',shiftlen:'8',oee:'72',days:'5'};
+    document.getElementById(id).value=defaults[id];
+  });
+  document.getElementById('shifts-out').textContent='2';
+  document.getElementById('shiftlen-out').textContent='8 h';
+  document.getElementById('oee-out').textContent='72%';
+  document.getElementById('days-out').textContent='5';
+  document.querySelector('input[name="demMode"][value="pg"]').checked=true;
+  render();
+}
+
+function load(){
+  try{
+    const raw=localStorage.getItem('ls_planner');
+    if(!raw) return;
+    const d=JSON.parse(raw);
+    if(d.lines)      lines=d.lines;
+    if(d.pgDemand)   pgDemand=d.pgDemand;
+    if(d.weekOvr)    weekOvr=d.weekOvr;
+    if(d.blOpen)     blOpen=d.blOpen;
+    if(d.calEvents)  calEvents=d.calEvents;
+    if(d.calSeeded)  calSeeded=d.calSeeded;
+    if(d.workforce)  workforce=Object.assign({ops:0,contract:40,absence:8},d.workforce);
+    if(d.rcDeadline) rcDeadline=d.rcDeadline;
+    if(d.demandMode) demandMode=d.demandMode;
+    if(d.curDate)    { curDate=new Date(d.curDate); curDate.setDate(1); }
+    if(d.sliders){
+      ['shifts','shiftlen','oee','days'].forEach(id=>{
+        if(d.sliders[id]!==undefined) document.getElementById(id).value=d.sliders[id];
+      });
+      document.getElementById('shifts-out').textContent=d.sliders.shifts;
+      document.getElementById('shiftlen-out').textContent=d.sliders.shiftlen+' h';
+      document.getElementById('oee-out').textContent=d.sliders.oee+'%';
+      document.getElementById('days-out').textContent=fmtD(+d.sliders.days);
+    }
+    if(d.demandMode==='rate'){
+      document.querySelector('input[name="demMode"][value="rate"]').checked=true;
+    }
+  }catch(e){}
+}
+
+function render(){
+  document.getElementById('month-label').textContent=`${MN[curDate.getMonth()]} ${curDate.getFullYear()}`;
+  renderMetrics();
+  renderLines();
+  if(activeTab==='weekly')     { renderWeeklyGrid(); renderCalendar(); }
+  if(activeTab==='monthly')    renderMonthlyTable();
+  if(activeTab==='backlog')    renderBacklog();
+  if(activeTab==='demand')     renderDemandView();
+  if(activeTab==='headcount')  renderHeadcount();
+  if(activeTab==='chart')      renderCharts();
+  save();
+}
+
+function addLine(){ lines.push({name:`Line ${String.fromCharCode(65+lines.length)}`,cap:250,demand:200,pg:'soda',hc:2,hcDay:1}); render(); }
+function delLine(i){ if(lines.length>1){ lines.splice(i,1); render(); } }
+
+// Slider listeners
+['shifts','shiftlen','oee'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>{
+    const v=document.getElementById(id).value, out=document.getElementById(id+'-out');
+    if(id==='oee') out.textContent=v+'%';
+    else if(id==='shiftlen') out.textContent=v+' h';
+    else out.textContent=v;
+    render();
+  });
+});
+document.getElementById('days').addEventListener('input',function(){
+  document.getElementById('days-out').textContent=fmtD(+this.value); render();
+});
+
+// Days ticks
+(function(){
+  const el=document.getElementById('days-ticks');
+  for(let v=1;v<=7;v+=0.5){
+    const s=document.createElement('span');
+    s.className=v%1!==0?'half':'';
+    s.textContent=v%1!==0?'·':v;
+    el.appendChild(s);
+  }
+})();
+
+document.getElementById('footer-date').textContent=new Date().toLocaleDateString('en-GB');
+load();
+render();
+</script>
+</body>
+</html>
