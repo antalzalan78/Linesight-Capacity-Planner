@@ -35,7 +35,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .metric-val{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--text);}
 .metric-val.ok{color:var(--green);}.metric-val.warn{color:var(--yellow);}.metric-val.danger{color:var(--red);}
 .metric-sub{font-size:10px;color:var(--text2);margin-top:3px;}
-.layout{display:grid;grid-template-columns:360px 1fr;gap:1.25rem;align-items:start;}
+.layout{display:grid;grid-template-columns:430px 1fr;gap:1.25rem;align-items:start;}
 @media(max-width:960px){.layout{grid-template-columns:1fr;}}
 .col-right{min-width:0;overflow:hidden;}
 .col-right>*{margin-bottom:1.25rem;}
@@ -62,6 +62,9 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #hc-line-table td, #hc-line-table th{padding:4px 5px;overflow:hidden;white-space:nowrap;}
 #hc-weekly-table{table-layout:fixed;font-size:11px;}
 #hc-weekly-table td, #hc-weekly-table th{padding:4px 4px;overflow:hidden;}
+#lines-table td, #lines-table th{padding:4px 3px;}
+#lines-table .ni, #lines-table .numi{font-size:12px;padding:4px 4px;}
+#lines-table .si{font-size:10px;padding:4px 3px;}
 .gt th{font-family:var(--mono);font-size:10px;color:var(--text2);font-weight:400;padding:0 5px 8px;text-align:left;border-bottom:.5px solid var(--border);}
 .gt th.c{text-align:center;}
 .gt td{padding:5px 5px;vertical-align:middle;border-bottom:.5px solid var(--border);font-size:11px;}
@@ -184,9 +187,9 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       </div>
       <div class="card">
         <div class="section-label">Production Lines</div>
-        <table class="gt">
+        <table class="gt" id="lines-table">
           <thead><tr>
-            <th style="width:46px;">Line</th>
+            <th style="width:70px;">Line</th>
             <th class="c" style="width:50px;">Cap.(u/h)</th>
             <th class="c" style="width:46px;" title="Line OEE %. Leave empty to use the base OEE slider. Weekly OEE overrides scale all lines proportionally.">OEE%</th>
             <th class="c" style="width:54px;" title="Operators per shift">HC/shift</th>
