@@ -104,6 +104,31 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .footer{margin-top:2rem;padding-top:1rem;border-top:.5px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--text2);display:flex;justify-content:space-between;}
 .divider{height:.5px;background:var(--border);margin:1rem 0;}
 .info-text{font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:1rem;}
+/* ── Printable report ── */
+#report-view{display:none;}
+@media print{
+  @page{size:A4;margin:12mm;}
+  body>*:not(#report-view){display:none!important;}
+  body{background:#fff!important;color:#111!important;padding:0!important;min-height:0!important;}
+  #report-view{display:block!important;}
+}
+#report-view{font-family:var(--font);color:#111;background:#fff;}
+#report-view h1{font-size:18px;margin-bottom:2px;}
+#report-view .rep-sub{font-size:10px;color:#666;margin-bottom:12px;}
+#report-view h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#333;margin:14px 0 5px;border-bottom:1px solid #ccc;padding-bottom:3px;}
+#report-view .kpis{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:4px;}
+#report-view .kpi{border:1px solid #ddd;border-radius:4px;padding:6px 8px;}
+#report-view .kpi .l{font-size:8px;text-transform:uppercase;color:#777;letter-spacing:.04em;}
+#report-view .kpi .v{font-family:var(--mono);font-size:14px;font-weight:500;margin-top:2px;}
+#report-view table{width:100%;border-collapse:collapse;font-size:10px;}
+#report-view th{text-align:left;font-family:var(--mono);font-weight:500;font-size:9px;color:#555;border-bottom:1px solid #999;padding:3px 5px;}
+#report-view td{padding:3px 5px;border-bottom:1px solid #e5e5e5;}
+#report-view td.r,#report-view th.r{text-align:right;font-family:var(--mono);}
+#report-view tr.tot td{font-weight:600;border-top:1px solid #999;background:#f5f5f5;}
+#report-view .warn{color:#b45309;}
+#report-view .bad{color:#b91c1c;}
+#report-view .good{color:#047857;}
+#report-view img{max-width:100%;margin-top:6px;}
 </style>
 </head>
 <body>
@@ -439,9 +464,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   </div>
 </div>
 
+<div id="report-view"></div>
+
 <div class="footer">
   <span>LineSight — Monthly Capacity Planner <span id="save-indicator" style="color:var(--green);font-size:10px;margin-left:8px;opacity:0;transition:opacity .5s;">✓ saved</span></span>
   <div style="display:flex;align-items:center;gap:8px;">
+    <button onclick="printReport()" title="Print / save a one-page monthly report as PDF" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">🖨 Report</button>
     <button onclick="exportCSV()" title="Export the active tab's data for the selected month" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">⬇ Export CSV</button>
     <button onclick="resetData()" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">↺ Reset</button>
     <button onclick="runAI()" id="ai-btn" style="display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;padding:6px 14px;border-radius:5px;border:.5px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">
@@ -1942,6 +1970,101 @@ function downloadTemplate(){
     ...PGS.map(g=>[g.label,...months.map(d=>getPGD(mk(d),g.key)||0)]),
   ];
   downloadCSV(rows,'linesight_demand_template.csv');
+}
+
+// ════════════════════════════════
+// PRINTABLE MONTHLY REPORT
+// ════════════════════════════════
+function buildReport(){
+  const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
+  const weeks=weeksOf(year,month), p=getP(), M=computeMetrics();
+  const fmt=d=>d.toLocaleDateString('en-GB',{month:'numeric',day:'numeric'});
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const base=Math.round(p.oee*100);
+
+  let wkRows='';
+  weeks.forEach((w,wi)=>{
+    const cap=wkCap(w,m,wi), dem=wkDem(w,m,wi,weeks), ut=pct(dem,cap), sl=cap-dem;
+    wkRows+=`<tr><td>${w.label}</td><td>${fmt(w.start)}–${fmt(w.end)}</td><td class="r">${fmtD(effDays(w,m,wi))}</td><td class="r">${hu(cap)}</td><td class="r">${hu(dem)}</td><td class="r ${ut>95?'bad':ut>80?'warn':''}">${ut}%</td><td class="r ${sl<0?'bad':''}">${sl>=0?'+':''}${hu(sl)}</td></tr>`;
+  });
+
+  let lnRows='';
+  lines.forEach(l=>{
+    let cap=0,dem=0;
+    weeks.forEach((w,wi)=>{cap+=lWkCap(l,w,m,wi); dem+=lWkDem(l,w,m,wi,weeks);});
+    const ut=pct(dem,cap);
+    lnRows+=`<tr><td>${esc(l.name)}</td><td>${pg(l.pg).label}</td><td class="r">${l.oee??base}%</td><td class="r">${hu(cap)}</td><td class="r">${hu(dem)}</td><td class="r ${ut>95?'bad':ut>80?'warn':''}">${ut}%</td></tr>`;
+  });
+
+  let pgRows='';
+  PGS.forEach(g=>{
+    const pgL=lines.filter(l=>l.pg===g.key);
+    const cap=pgL.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
+    const dem=getPGD(m,g.key);
+    if(cap||dem) pgRows+=`<tr><td>${g.label}</td><td class="r">${hu(cap)}</td><td class="r">${hu(dem)}</td><td class="r">${cap?pct(dem,cap)+'%':'—'}</td></tr>`;
+  });
+
+  const opening=totBLOpen(m);
+  const blLine=opening||M.closing
+    ?`Opening backlog <strong>${hu(opening)}</strong> units → closing <strong class="${M.closing>0?'bad':'good'}">${hu(M.closing)}</strong> units.`
+    :'No backlog in the plan.';
+  const covLine=M.coverage!==null
+    ?` Workforce coverage <strong class="${M.coverage>=100?'good':M.coverage>=90?'warn':'bad'}">${M.coverage}%</strong> (${workforce.ops} operators, ${workforce.contract} h/week, ${workforce.absence}% absence).`
+    :'';
+  const evs=Object.entries(calEvents)
+    .map(([k,v])=>{const [y,mo,da]=k.split('-').map(Number); return {date:new Date(y,mo-1,da),label:v.label};})
+    .filter(e=>e.date.getFullYear()===year&&e.date.getMonth()===month)
+    .sort((a,b)=>a.date-b.date);
+  const calLine=evs.length?`Calendar: ${evs.map(e=>`${e.date.getDate()}. ${esc(e.label)}`).join(' · ')}`:'';
+
+  document.getElementById('report-view').innerHTML=`
+    <h1>LineSight — Monthly Capacity Report</h1>
+    <div class="rep-sub">${MN[month]} ${year} · generated ${new Date().toLocaleDateString('en-GB')} ·
+      ${p.shifts} shifts × ${p.shiftlen} h · base OEE ${base}% · ${fmtD(p.days)} days/week · demand mode: ${demandMode==='pg'?'product group':'line rate'}</div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Capacity</div><div class="v">${hu(M.cap)}</div></div>
+      <div class="kpi"><div class="l">Demand</div><div class="v">${hu(M.dem)}</div></div>
+      <div class="kpi"><div class="l">Utilisation</div><div class="v ${M.util>95?'bad':M.util>80?'warn':'good'}">${M.util}%</div></div>
+      <div class="kpi"><div class="l">Free cap.</div><div class="v ${M.free<0?'bad':''}">${M.free>=0?'+':''}${hu(M.free)}</div></div>
+      <div class="kpi"><div class="l">Labor hrs</div><div class="v">${hu(M.labor)}</div></div>
+      <div class="kpi"><div class="l">Coverage</div><div class="v ${M.coverage===null?'':M.coverage>=100?'good':M.coverage>=90?'warn':'bad'}">${M.coverage===null?'—':M.coverage+'%'}</div></div>
+      <div class="kpi"><div class="l">Closing backlog</div><div class="v ${M.closing>0?'bad':'good'}">${hu(M.closing)}</div></div>
+    </div>
+    <h2>Weekly breakdown</h2>
+    <table><thead><tr><th>Wk</th><th>Period</th><th class="r">Days</th><th class="r">Capacity</th><th class="r">Demand</th><th class="r">Util</th><th class="r">Slack</th></tr></thead>
+    <tbody>${wkRows}<tr class="tot"><td colspan="3">TOTAL</td><td class="r">${hu(M.cap)}</td><td class="r">${hu(M.dem)}</td><td class="r">${M.util}%</td><td class="r">${M.free>=0?'+':''}${hu(M.free)}</td></tr></tbody></table>
+    <h2>Line utilisation</h2>
+    <table><thead><tr><th>Line</th><th>Product group</th><th class="r">OEE</th><th class="r">Capacity</th><th class="r">Demand</th><th class="r">Util</th></tr></thead><tbody>${lnRows}</tbody></table>
+    ${pgRows?`<h2>Product groups</h2>
+    <table><thead><tr><th>Group</th><th class="r">Capacity</th><th class="r">Demand</th><th class="r">Util</th></tr></thead><tbody>${pgRows}</tbody></table>`:''}
+    <h2>Backlog &amp; workforce</h2>
+    <div style="font-size:10px;line-height:1.7;">${blLine}${covLine}${calLine?`<br>${calLine}`:''}</div>
+    <h2>Weekly capacity vs. demand</h2>
+    <img id="rep-chart" alt="">
+  `;
+}
+function printReport(){
+  buildReport();
+  try{
+    const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
+    const weeks=weeksOf(year,month);
+    const cv=document.createElement('canvas'); cv.width=1000; cv.height=300;
+    const ch=new Chart(cv.getContext('2d'),{type:'bar',
+      data:{labels:weeks.map(w=>w.label),datasets:[
+        {label:'Capacity',data:weeks.map((w,wi)=>wkCap(w,m,wi)),backgroundColor:'rgba(29,158,117,0.55)',borderColor:'#1D9E75',borderWidth:1},
+        {label:'Demand',  data:weeks.map((w,wi)=>wkDem(w,m,wi,weeks)),backgroundColor:'rgba(55,138,221,0.55)',borderColor:'#378ADD',borderWidth:1},
+      ]},
+      options:{responsive:false,animation:false,devicePixelRatio:2,
+        plugins:{legend:{labels:{color:'#333',font:{size:12}}}},
+        scales:{
+          y:{ticks:{color:'#555',font:{size:11}},grid:{color:'#e5e5e5'}},
+          x:{ticks:{color:'#555',font:{size:11}},grid:{display:false}}
+        }}
+    });
+    document.getElementById('rep-chart').src=ch.toBase64Image();
+    ch.destroy();
+  }catch(e){}
+  window.print();
 }
 
 // ════════════════════════════════
