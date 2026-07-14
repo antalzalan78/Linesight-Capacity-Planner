@@ -299,6 +299,21 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
           </label>
         </div>
       </div>
+      <div class="card">
+        <div class="section-label">Demand import (CSV)</div>
+        <p class="info-text">
+          Import monthly demand per product group instead of typing it. Two layouts are accepted:<br>
+          <strong>Wide</strong> — first column is the product group, further columns are months (<span style="font-family:var(--mono);">2026-07</span>, <span style="font-family:var(--mono);">2026/8</span> or <span style="font-family:var(--mono);">Jul 2026</span>).<br>
+          <strong>Long</strong> — <span style="font-family:var(--mono);">month;group;demand</span> rows.<br>
+          Separator ; , or tab (auto-detected). Values are whole units; imported month+group pairs overwrite the stored value.
+        </p>
+        <div style="display:flex;gap:8px;">
+          <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('imp-file').click()">⬆ Choose CSV…</button>
+          <button class="add-btn" style="margin-top:0;" onclick="downloadTemplate()">⬇ Template</button>
+        </div>
+        <input type="file" id="imp-file" accept=".csv,.txt" style="display:none" onchange="importCSVFile(this.files[0]);this.value=''">
+        <div id="imp-preview" style="margin-top:10px;"></div>
+      </div>
     </div>
     <div class="col-right">
       <div class="card">
@@ -1657,6 +1672,105 @@ function exportCSV(){
   }
 
   downloadCSV(rows,`linesight_${activeTab}_${year}-${String(month+1).padStart(2,'0')}.csv`);
+}
+
+// ════════════════════════════════
+// CSV IMPORT  (monthly product-group demand)
+// ════════════════════════════════
+let impPending=null; // parsed [{m:monthKey, pgKey, value}]
+function normPG(s){
+  s=String(s||'').trim().toLowerCase();
+  const g=PGS.find(g=>g.key===s||g.label.toLowerCase()===s);
+  return g?g.key:null;
+}
+function parseMonthToken(s){
+  s=String(s||'').trim();
+  let mm=s.match(/^(\d{4})[-\/.](\d{1,2})$/);
+  if(mm){ const y=+mm[1], mo=+mm[2]; if(mo>=1&&mo<=12) return `${y}-${mo-1}`; }
+  mm=s.match(/^([A-Za-z]{3,})\.?\s+(\d{4})$/);
+  if(mm){ const i=MN.findIndex(n=>n.toLowerCase().startsWith(mm[1].toLowerCase())); if(i>=0) return `${+mm[2]}-${i}`; }
+  return null;
+}
+function parseUnits(s){ const d=String(s??'').replace(/[^\d]/g,''); return d?parseInt(d,10):NaN; }
+function importCSVFile(file){
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>parseImport(String(reader.result));
+  reader.onerror=()=>showImpPreview([], ['Could not read the file.']);
+  reader.readAsText(file);
+}
+function parseImport(text){
+  text=text.replace(/^\uFEFF/,'');
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length){ showImpPreview([],['Empty file.']); return; }
+  const delim=[';','\t',','].map(d=>({d,c:lines[0].split(d).length})).sort((a,b)=>b.c-a.c)[0].d;
+  const rows=lines.map(l=>l.split(delim).map(c=>c.trim().replace(/^"(.*)"$/,'$1')));
+  const out=[], errs=[];
+  const monthCols=rows[0].slice(1).map(parseMonthToken);
+  if(monthCols.some(x=>x!==null)){
+    // wide: Product group; 2026-07; 2026-08; ...
+    rows.slice(1).forEach((r,ri)=>{
+      const key=normPG(r[0]);
+      if(!key){ errs.push(`Row ${ri+2}: unknown product group "${r[0]}"`); return; }
+      monthCols.forEach((mkey,ci)=>{
+        if(!mkey) return;
+        const v=parseUnits(r[ci+1]);
+        if(!isNaN(v)) out.push({m:mkey,pgKey:key,value:v});
+      });
+    });
+  } else {
+    // long: month; group; demand — header row optional
+    const dataRows=parseMonthToken(rows[0][0])?rows:rows.slice(1);
+    dataRows.forEach((r,ri)=>{
+      const rn=ri+(dataRows===rows?1:2);
+      if(r.length<3){ errs.push(`Row ${rn}: expected month;group;demand`); return; }
+      const mkey=parseMonthToken(r[0]), key=normPG(r[1]), v=parseUnits(r[2]);
+      if(!mkey){ errs.push(`Row ${rn}: unrecognised month "${r[0]}"`); return; }
+      if(!key){ errs.push(`Row ${rn}: unknown product group "${r[1]}"`); return; }
+      if(isNaN(v)){ errs.push(`Row ${rn}: not a number "${r[2]}"`); return; }
+      out.push({m:mkey,pgKey:key,value:v});
+    });
+  }
+  impPending=out.length?out:null;
+  showImpPreview(out,errs);
+}
+function showImpPreview(out,errs){
+  const el=document.getElementById('imp-preview');
+  if(!out.length){
+    el.innerHTML=`<div style="font-size:11px;color:var(--red);">Nothing to import.${errs.length?' '+errs[0]:''}</div>`;
+    return;
+  }
+  const months=[...new Set(out.map(o=>o.m))].sort();
+  const mLabel=k=>{const [y,mo]=k.split('-').map(Number); return `${MN[mo].slice(0,3)} ${y}`;};
+  el.innerHTML=`
+    <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">
+      <strong style="color:var(--text);">${out.length}</strong> values ·
+      ${months.length} month(s): ${months.map(mLabel).join(', ')} ·
+      ${[...new Set(out.map(o=>o.pgKey))].length} group(s)
+      ${errs.length?` · <span style="color:var(--yellow);">${errs.length} row(s) skipped</span>`:''}
+    </div>
+    ${errs.slice(0,3).map(e=>`<div style="font-size:10px;color:var(--yellow);">${e}</div>`).join('')}
+    <div style="display:flex;gap:8px;">
+      <button class="add-btn" style="border-color:var(--green);color:var(--green);" onclick="applyImport()">✓ Apply import</button>
+      <button class="add-btn" onclick="impPending=null;document.getElementById('imp-preview').innerHTML=''">Cancel</button>
+    </div>
+  `;
+}
+function applyImport(){
+  if(!impPending) return;
+  const n=impPending.length;
+  impPending.forEach(o=>setPGD(o.m,o.pgKey,o.value));
+  impPending=null;
+  document.getElementById('imp-preview').innerHTML=`<div style="font-size:11px;color:var(--green);">✓ ${n} values imported.</div>`;
+  render();
+}
+function downloadTemplate(){
+  const months=[0,1,2].map(off=>new Date(curDate.getFullYear(),curDate.getMonth()+off,1));
+  const rows=[
+    ['Product group',...months.map(d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`)],
+    ...PGS.map(g=>[g.label,...months.map(d=>getPGD(mk(d),g.key)||0)]),
+  ];
+  downloadCSV(rows,'linesight_demand_template.csv');
 }
 
 // ════════════════════════════════
