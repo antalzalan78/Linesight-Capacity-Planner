@@ -130,6 +130,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   <button class="tab"        onclick="switchTab('demand')">Product Groups</button>
   <button class="tab"        onclick="switchTab('headcount')">Headcount</button>
   <button class="tab"        onclick="switchTab('chart')">Charts</button>
+  <button class="tab"        onclick="switchTab('scenarios')">Scenarios</button>
 </div>
 
 <!-- ══ WEEKLY ══ -->
@@ -397,6 +398,36 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   </div>
 </div>
 
+<!-- ══ SCENARIOS ══ -->
+<div class="view-panel" id="panel-scenarios">
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="section-label">Saved scenarios</div>
+        <p class="info-text">A scenario is a full snapshot of the plan — lines, parameters, demand, calendar, workforce and backlog. Save variants like "2 shifts" vs. "3 shifts + weekend" and compare them side by side for the selected month. <strong>↩ Load</strong> replaces the current plan, <strong>⟳</strong> overwrites the scenario with the current plan.</p>
+        <div id="sc-list"></div>
+        <div class="divider"></div>
+        <input type="text" id="sc-name" class="ni" placeholder="Scenario name (e.g. 3 shifts + weekend)">
+        <button class="add-btn" onclick="saveScenario()">+ Save current as scenario</button>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="card">
+        <div class="section-label">Comparison — <span id="sc-month-label"></span></div>
+        <div style="overflow-x:auto;"><table class="gt" id="sc-table"></table></div>
+      </div>
+      <div class="card">
+        <div class="section-label">Capacity vs. demand by scenario</div>
+        <div class="chart-legend">
+          <span><span class="legend-dot" style="background:var(--green);"></span>Capacity</span>
+          <span><span class="legend-dot" style="background:var(--blue);"></span>Demand</span>
+        </div>
+        <div style="position:relative;height:220px;"><canvas id="scChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ AI ANALYSIS ══ -->
 <div id="ai-panel" style="display:none;margin-top:1.25rem;">
   <div class="card">
@@ -448,6 +479,7 @@ let calEvents  = {};   // ['YYYY-MM-DD'] = {label, type:'holiday'|'maint'}
 let calSeeded  = [];   // years already auto-seeded with NL public holidays
 let workforce  = {ops:0, contract:40, absence:8}; // available operators; ops=0 disables the coverage check
 let rcDeadline = null; // 'YYYY-MM-DD' — backlog recovery calculator deadline
+let scenarios  = [];   // [{name, ts, state}] — full plan snapshots for comparison
 let demandMode = 'pg'; // 'pg' | 'rate'
 let curDate    = new Date(); curDate.setDate(1);
 let charts     = {};
@@ -1153,7 +1185,7 @@ function delCalEvent(k){ delete calEvents[k]; render(); }
 function changeMonth(d){ curDate.setMonth(curDate.getMonth()+d); render(); }
 function switchTab(name){
   activeTab=name;
-  ['weekly','monthly','backlog','demand','headcount','chart'].forEach((n,i)=>
+  ['weekly','monthly','backlog','demand','headcount','chart','scenarios'].forEach((n,i)=>
     document.querySelectorAll('.tab')[i].classList.toggle('active',n===name));
   document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
@@ -1671,7 +1703,146 @@ function exportCSV(){
     });
   }
 
+  else if(activeTab==='scenarios'){
+    const cols=scenarioCols();
+    rows.push(['SCENARIO COMPARISON']);
+    rows.push(['Metric',...cols.map(c=>c.name)]);
+    rows.push(['Parameters',...cols.map(c=>c.metrics.params)]);
+    rows.push(['Capacity (units)',...cols.map(c=>c.metrics.cap)]);
+    rows.push(['Demand (units)',...cols.map(c=>c.metrics.dem)]);
+    rows.push(['Utilisation %',...cols.map(c=>c.metrics.util)]);
+    rows.push(['Free capacity',...cols.map(c=>c.metrics.free)]);
+    rows.push(['Labor hrs',...cols.map(c=>c.metrics.labor)]);
+    rows.push(['Coverage %',...cols.map(c=>c.metrics.coverage??'')]);
+    rows.push(['Closing backlog',...cols.map(c=>c.metrics.closing)]);
+  }
+
   downloadCSV(rows,`linesight_${activeTab}_${year}-${String(month+1).padStart(2,'0')}.csv`);
+}
+
+// ════════════════════════════════
+// SCENARIOS
+// ════════════════════════════════
+function snapshotState(){
+  return JSON.parse(JSON.stringify({
+    lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, demandMode,
+    sliders:{
+      shifts:  document.getElementById('shifts').value,
+      shiftlen:document.getElementById('shiftlen').value,
+      oee:     document.getElementById('oee').value,
+      days:    document.getElementById('days').value,
+    }
+  }));
+}
+function applyState(s){
+  lines=s.lines; pgDemand=s.pgDemand||{}; weekOvr=s.weekOvr||{}; blOpen=s.blOpen||{};
+  calEvents=s.calEvents||{}; calSeeded=s.calSeeded||[];
+  workforce=Object.assign({ops:0,contract:40,absence:8},s.workforce);
+  demandMode=s.demandMode||'pg';
+  ['shifts','shiftlen','oee','days'].forEach(id=>{
+    if(s.sliders&&s.sliders[id]!==undefined) document.getElementById(id).value=s.sliders[id];
+  });
+}
+// Run fn with a scenario's state applied, then restore the current state
+function withState(s,fn){
+  const keep=snapshotState();
+  applyState(JSON.parse(JSON.stringify(s)));
+  let r; try{ r=fn(); } finally { applyState(keep); }
+  return r;
+}
+// Key figures of the selected month under the CURRENT global state
+function computeMetrics(){
+  const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
+  const weeks=weeksOf(year,month), p=getP();
+  let cap=0,dem=0,labor=0;
+  weeks.forEach((w,wi)=>{cap+=wkCap(w,m,wi); dem+=wkDem(w,m,wi,weeks); labor+=wkHC(w,m,wi);});
+  const series=backlogSeries(m,weeks,totBLOpen(m));
+  const closing=series.length?series[series.length-1].bl:0;
+  let coverage=null;
+  if(workforce.ops>0&&labor>0){
+    const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
+    const avail=weeks.reduce((s,w,wi)=>s+workforce.ops*dailyH*absF*effDays(w,m,wi),0);
+    coverage=Math.round(avail/labor*100);
+  }
+  return {cap,dem,util:pct(dem,cap),free:cap-dem,labor,coverage,closing,
+    params:`${p.shifts}×${p.shiftlen}h · OEE ${Math.round(p.oee*100)}% · ${fmtD(p.days)}d/w`};
+}
+function saveScenario(){
+  const inp=document.getElementById('sc-name');
+  const name=inp.value.trim()||`Scenario ${scenarios.length+1}`;
+  scenarios.push({name, ts:Date.now(), state:snapshotState()});
+  inp.value='';
+  render();
+}
+function updScenario(i){
+  if(!confirm(`Overwrite "${scenarios[i].name}" with the current plan?`)) return;
+  scenarios[i].state=snapshotState(); scenarios[i].ts=Date.now();
+  render();
+}
+function delScenario(i){ scenarios.splice(i,1); render(); }
+function loadScenario(i){
+  if(!confirm(`Load "${scenarios[i].name}"? The current plan will be replaced.`)) return;
+  applyState(JSON.parse(JSON.stringify(scenarios[i].state)));
+  document.getElementById('shifts-out').textContent=document.getElementById('shifts').value;
+  document.getElementById('shiftlen-out').textContent=document.getElementById('shiftlen').value+' h';
+  document.getElementById('oee-out').textContent=document.getElementById('oee').value+'%';
+  document.getElementById('days-out').textContent=fmtD(+document.getElementById('days').value);
+  document.querySelector(`input[name="demMode"][value="${demandMode}"]`).checked=true;
+  render();
+}
+function scenarioCols(){
+  return [{name:'Current',metrics:computeMetrics()},
+          ...scenarios.map(s=>({name:s.name,metrics:withState(s.state,computeMetrics)}))];
+}
+function renderScenarios(){
+  document.getElementById('sc-month-label').textContent=`${MN[curDate.getMonth()]} ${curDate.getFullYear()}`;
+  const list=document.getElementById('sc-list');
+  list.innerHTML=scenarios.length?scenarios.map((s,i)=>`
+    <div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid var(--border);">
+      <span style="font-size:12px;flex:1;">${s.name}</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text2);">${new Date(s.ts).toLocaleDateString('en-GB')}</span>
+      <button class="del-btn" style="color:var(--text2);" title="Load — replaces the current plan" onclick="loadScenario(${i})">↩</button>
+      <button class="del-btn" style="color:var(--text2);" title="Overwrite with the current plan" onclick="updScenario(${i})">⟳</button>
+      <button class="del-btn" title="Delete scenario" onclick="delScenario(${i})">✕</button>
+    </div>`).join('')
+    :'<div class="info-text" style="margin:0;">No scenarios saved yet — set up a plan variant and save it below.</div>';
+
+  const cols=scenarioCols();
+  const tbl=document.getElementById('sc-table'); tbl.innerHTML='';
+  const hr=tbl.createTHead().insertRow();
+  ['Metric',...cols.map(c=>c.name)].forEach((h,i)=>{
+    const th=document.createElement('th'); th.textContent=h;
+    th.className=i?'c':''; th.style.whiteSpace='nowrap';
+    if(i===1) th.style.color='var(--green-l)';
+    hr.appendChild(th);
+  });
+  const body=tbl.createTBody();
+  const defs=[
+    ['Parameters',c=>`<span style="font-family:var(--mono);font-size:10px;color:var(--text2);">${c.params}</span>`],
+    ['Capacity (units)',c=>`<span style="font-family:var(--mono);color:var(--green-l);">${hu(c.cap)}</span>`],
+    ['Demand (units)',c=>`<span style="font-family:var(--mono);color:var(--blue-l);">${hu(c.dem)}</span>`],
+    ['Utilisation',c=>`<span style="font-family:var(--mono);font-weight:500;color:${tCol(c.util)};">${c.util}%</span>`],
+    ['Free capacity',c=>`<span style="font-family:var(--mono);color:${c.free<0?'var(--red)':'var(--text2)'};">${c.free>=0?'+':''}${hu(c.free)}</span>`],
+    ['Labor hrs',c=>`<span style="font-family:var(--mono);">${hu(c.labor)}</span>`],
+    ['Coverage',c=>c.coverage===null?'<span style="color:var(--text2);">—</span>':`<span style="font-family:var(--mono);color:${c.coverage>=100?'var(--green)':c.coverage>=90?'var(--yellow)':'var(--red)'};">${c.coverage}%</span>`],
+    ['Closing backlog',c=>`<span style="font-family:var(--mono);color:${c.closing>0?'var(--red)':'var(--green)'};">${hu(c.closing)}</span>`],
+  ];
+  defs.forEach(([label,fn])=>{
+    const tr=body.insertRow();
+    tr.innerHTML=`<td style="font-size:11px;color:var(--text2);">${label}</td>`+
+      cols.map(c=>`<td class="c">${fn(c.metrics)}</td>`).join('');
+  });
+
+  destroyChart('scChart');
+  charts['scChart']=new Chart(document.getElementById('scChart').getContext('2d'),{type:'bar',
+    data:{labels:cols.map(c=>c.name),datasets:[
+      {label:'Capacity',data:cols.map(c=>c.metrics.cap),backgroundColor:'rgba(29,158,117,0.4)',borderColor:'#1D9E75',borderWidth:1},
+      {label:'Demand',  data:cols.map(c=>c.metrics.dem),backgroundColor:'rgba(55,138,221,0.4)',borderColor:'#378ADD',borderWidth:1},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
+              x:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}}}
+  });
 }
 
 // ════════════════════════════════
@@ -1779,7 +1950,7 @@ function downloadTemplate(){
 function save(){
   try{
     localStorage.setItem('ls_planner', JSON.stringify({
-      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, rcDeadline,
+      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, rcDeadline, scenarios,
       curDate: curDate.toISOString(),
       sliders: {
         shifts: document.getElementById('shifts').value,
@@ -1801,7 +1972,7 @@ function resetData(){
     {name:'Line B',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
     {name:'Line C',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
   ];
-  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; rcDeadline=null; demandMode='pg';
+  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; rcDeadline=null; scenarios=[]; demandMode='pg';
   curDate=new Date(); curDate.setDate(1);
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     const defaults={shifts:'2',shiftlen:'8',oee:'72',days:'5'};
@@ -1828,6 +1999,7 @@ function load(){
     if(d.calSeeded)  calSeeded=d.calSeeded;
     if(d.workforce)  workforce=Object.assign({ops:0,contract:40,absence:8},d.workforce);
     if(d.rcDeadline) rcDeadline=d.rcDeadline;
+    if(d.scenarios)  scenarios=d.scenarios;
     if(d.demandMode) demandMode=d.demandMode;
     if(d.curDate)    { curDate=new Date(d.curDate); curDate.setDate(1); }
     if(d.sliders){
@@ -1855,6 +2027,7 @@ function render(){
   if(activeTab==='demand')     renderDemandView();
   if(activeTab==='headcount')  renderHeadcount();
   if(activeTab==='chart')      renderCharts();
+  if(activeTab==='scenarios')  renderScenarios();
   save();
 }
 
