@@ -469,9 +469,64 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 
 <div id="report-view"></div>
 
+<!-- ══ CLOUD SYNC MODAL ══ -->
+<div id="sync-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100;align-items:center;justify-content:center;">
+  <div class="card" style="width:520px;max-width:92vw;max-height:88vh;overflow-y:auto;margin:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+      <div class="section-label" style="margin-bottom:0;">Cloud sync — Supabase</div>
+      <button onclick="closeSync()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;padding:2px 6px;">✕</button>
+    </div>
+    <p class="info-text">
+      Store the plan in a shared cloud database so your team sees the same data on any machine.
+      Changes push automatically (a few seconds after each edit); the plan is pulled when the app opens.
+    </p>
+    <div class="param-row">
+      <div class="param-label-row"><span class="param-label">Supabase project URL</span></div>
+      <input type="text" id="sy-url" class="ni" placeholder="https://xxxx.supabase.co" autocomplete="off">
+    </div>
+    <div class="param-row">
+      <div class="param-label-row"><span class="param-label">Anon (public) API key</span></div>
+      <input type="password" id="sy-key" class="ni" placeholder="eyJ…" autocomplete="off">
+    </div>
+    <div class="param-row">
+      <div class="param-label-row"><span class="param-label">Plan name (one row per team plan)</span></div>
+      <input type="text" id="sy-plan" class="ni" value="default">
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:1rem;">
+      <input type="checkbox" id="sy-on"> Enable automatic sync
+    </label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="applySyncSettings()">✓ Save settings</button>
+      <button class="add-btn" style="margin-top:0;" onclick="cloudPull(false)">⬇ Pull from cloud</button>
+      <button class="add-btn" style="margin-top:0;" onclick="cloudPush()">⬆ Push to cloud</button>
+    </div>
+    <div class="divider"></div>
+    <details style="font-size:11px;color:var(--text2);">
+      <summary style="cursor:pointer;margin-bottom:8px;">One-time Supabase setup (free) — click to expand</summary>
+      <ol style="margin-left:16px;line-height:1.8;">
+        <li>Go to <span style="font-family:var(--mono);">supabase.com</span> → New project (free tier is enough).</li>
+        <li>Open <strong>SQL Editor</strong> and run:</li>
+      </ol>
+      <pre style="background:var(--bg3);border-radius:5px;padding:8px;font-size:10px;overflow-x:auto;margin:6px 0;">create table if not exists plans (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now());
+alter table plans enable row level security;
+create policy "open access" on plans
+  for all using (true) with check (true);</pre>
+      <ol start="3" style="margin-left:16px;line-height:1.8;">
+        <li>In <strong>Project Settings → API</strong> copy the <em>Project URL</em> and the <em>anon public</em> key into the fields above.</li>
+        <li>Tick "Enable automatic sync", Save, then <strong>⬆ Push</strong> once to upload the current plan.</li>
+      </ol>
+      <p style="margin-top:6px;color:var(--yellow);">⚠ Anyone who has the URL + anon key can read and write this plan — share them only with your team (e.g. private Teams chat), never publish them.</p>
+    </details>
+  </div>
+</div>
+
 <div class="footer">
-  <span>LineSight — Monthly Capacity Planner <span id="save-indicator" style="color:var(--green);font-size:10px;margin-left:8px;opacity:0;transition:opacity .5s;">✓ saved</span></span>
+  <span>LineSight — Monthly Capacity Planner <span id="save-indicator" style="color:var(--green);font-size:10px;margin-left:8px;opacity:0;transition:opacity .5s;">✓ saved</span><span id="sync-status" style="font-size:10px;margin-left:8px;color:var(--text2);"></span></span>
   <div style="display:flex;align-items:center;gap:8px;">
+    <button onclick="openSync()" title="Shared cloud storage for the plan (Supabase)" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">☁ Sync</button>
     <button onclick="printReport()" title="Print / save a one-page monthly report as PDF" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">🖨 Report</button>
     <button onclick="exportCSV()" title="Export the active tab's data for the selected month" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">⬇ Export CSV</button>
     <button onclick="resetData()" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">↺ Reset</button>
@@ -1814,11 +1869,7 @@ function delScenario(i){ scenarios.splice(i,1); render(); }
 function loadScenario(i){
   if(!confirm(`Load "${scenarios[i].name}"? The current plan will be replaced.`)) return;
   applyState(JSON.parse(JSON.stringify(scenarios[i].state)));
-  document.getElementById('shifts-out').textContent=document.getElementById('shifts').value;
-  document.getElementById('shiftlen-out').textContent=document.getElementById('shiftlen').value+' h';
-  document.getElementById('oee-out').textContent=document.getElementById('oee').value+'%';
-  document.getElementById('days-out').textContent=fmtD(+document.getElementById('days').value);
-  document.querySelector(`input[name="demMode"][value="${demandMode}"]`).checked=true;
+  syncControls();
   render();
 }
 function scenarioCols(){
@@ -2071,6 +2122,104 @@ function printReport(){
 }
 
 // ════════════════════════════════
+// CLOUD SYNC  (Supabase REST — plans table, one jsonb row per plan)
+// ════════════════════════════════
+let syncCfg={url:'',key:'',plan:'default',enabled:false};
+try{ Object.assign(syncCfg, JSON.parse(localStorage.getItem('ls_sync')||'{}')); }catch(e){}
+let pushT=null, suppressPush=false;
+
+function setSyncStatus(txt,color){
+  const el=document.getElementById('sync-status');
+  el.textContent=txt; el.style.color=color||'var(--text2)';
+}
+// Full plan incl. scenarios & deadline (snapshotState covers the rest)
+function fullState(){
+  const s=snapshotState();
+  s.scenarios=JSON.parse(JSON.stringify(scenarios));
+  s.rcDeadline=rcDeadline;
+  return s;
+}
+function applyFullState(s){
+  suppressPush=true; // the render() below saves; don't echo the pull back to the cloud
+  try{
+    applyState(s);
+    if(Array.isArray(s.scenarios)) scenarios=s.scenarios;
+    if(s.rcDeadline!==undefined) rcDeadline=s.rcDeadline;
+    syncControls();
+    render();
+  } finally { suppressPush=false; }
+}
+// Push the slider/radio DOM displays back in line with the state
+function syncControls(){
+  document.getElementById('shifts-out').textContent=document.getElementById('shifts').value;
+  document.getElementById('shiftlen-out').textContent=document.getElementById('shiftlen').value+' h';
+  document.getElementById('oee-out').textContent=document.getElementById('oee').value+'%';
+  document.getElementById('days-out').textContent=fmtD(+document.getElementById('days').value);
+  document.querySelector(`input[name="demMode"][value="${demandMode}"]`).checked=true;
+}
+const syncReady=()=>!!(syncCfg.url&&syncCfg.key);
+const syncBase =()=>syncCfg.url.replace(/\/+$/,'')+'/rest/v1/plans';
+const syncHdrs =()=>({apikey:syncCfg.key, Authorization:'Bearer '+syncCfg.key, 'Content-Type':'application/json'});
+
+function schedulePush(){
+  if(!syncCfg.enabled||!syncReady()||suppressPush) return;
+  clearTimeout(pushT);
+  pushT=setTimeout(cloudPush, 2500);
+}
+async function cloudPush(){
+  if(!syncReady()){ alert('Set the Supabase URL and anon key first (☁ Sync).'); return; }
+  clearTimeout(pushT);
+  try{
+    setSyncStatus('☁ syncing…');
+    const res=await fetch(syncBase()+'?on_conflict=id',{
+      method:'POST',
+      headers:Object.assign(syncHdrs(),{Prefer:'resolution=merge-duplicates'}),
+      body:JSON.stringify([{id:syncCfg.plan||'default', data:fullState(), updated_at:new Date().toISOString()}])
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    setSyncStatus('☁ synced '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),'var(--green)');
+  }catch(e){
+    setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
+  }
+}
+async function cloudPull(silent){
+  if(!syncReady()){ if(!silent) alert('Set the Supabase URL and anon key first (☁ Sync).'); return; }
+  try{
+    setSyncStatus('☁ loading…');
+    const res=await fetch(syncBase()+'?id=eq.'+encodeURIComponent(syncCfg.plan||'default')+'&select=data,updated_at',{headers:syncHdrs()});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const rows=await res.json();
+    if(rows.length&&rows[0].data){
+      applyFullState(rows[0].data);
+      setSyncStatus('☁ synced '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),'var(--green)');
+    } else {
+      setSyncStatus('☁ no cloud plan yet');
+      if(!silent) alert('No plan named "'+(syncCfg.plan||'default')+'" in the cloud yet — use ⬆ Push to upload the current one.');
+    }
+  }catch(e){
+    setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
+  }
+}
+function openSync(){
+  document.getElementById('sy-url').value=syncCfg.url;
+  document.getElementById('sy-key').value=syncCfg.key;
+  document.getElementById('sy-plan').value=syncCfg.plan||'default';
+  document.getElementById('sy-on').checked=!!syncCfg.enabled;
+  document.getElementById('sync-modal').style.display='flex';
+}
+function closeSync(){ document.getElementById('sync-modal').style.display='none'; }
+function applySyncSettings(){
+  syncCfg.url=document.getElementById('sy-url').value.trim();
+  syncCfg.key=document.getElementById('sy-key').value.trim();
+  syncCfg.plan=document.getElementById('sy-plan').value.trim()||'default';
+  syncCfg.enabled=document.getElementById('sy-on').checked;
+  localStorage.setItem('ls_sync',JSON.stringify(syncCfg));
+  closeSync();
+  if(syncCfg.enabled) cloudPull(true);
+  else setSyncStatus('');
+}
+
+// ════════════════════════════════
 // MASTER RENDER
 // ════════════════════════════════
 function save(){
@@ -2088,6 +2237,7 @@ function save(){
     const ind=document.getElementById('save-indicator');
     if(ind){ ind.style.opacity='1'; setTimeout(()=>ind.style.opacity='0',1200); }
   }catch(e){}
+  schedulePush();
 }
 
 function resetData(){
@@ -2188,6 +2338,7 @@ document.getElementById('days').addEventListener('input',function(){
 document.getElementById('footer-date').textContent=new Date().toLocaleDateString('en-GB');
 load();
 render();
+if(syncCfg.enabled) cloudPull(true);
 </script>
 </body>
 </html>
