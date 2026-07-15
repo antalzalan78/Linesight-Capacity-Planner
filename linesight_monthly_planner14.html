@@ -485,8 +485,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <input type="text" id="sy-url" class="ni" placeholder="https://xxxx.supabase.co" autocomplete="off">
     </div>
     <div class="param-row">
-      <div class="param-label-row"><span class="param-label">Anon (public) API key</span></div>
-      <input type="password" id="sy-key" class="ni" placeholder="eyJ…" autocomplete="off">
+      <div class="param-label-row"><span class="param-label">Publishable / anon (public) API key</span></div>
+      <input type="password" id="sy-key" class="ni" placeholder="sb_publishable_… or eyJ…" autocomplete="off">
     </div>
     <div class="param-row">
       <div class="param-label-row"><span class="param-label">Plan name (one row per team plan)</span></div>
@@ -2159,7 +2159,13 @@ function syncControls(){
 }
 const syncReady=()=>!!(syncCfg.url&&syncCfg.key);
 const syncBase =()=>syncCfg.url.replace(/\/+$/,'')+'/rest/v1/plans';
-const syncHdrs =()=>({apikey:syncCfg.key, Authorization:'Bearer '+syncCfg.key, 'Content-Type':'application/json'});
+// Legacy anon keys are JWTs (eyJ…) and need the Bearer header too;
+// new publishable keys (sb_publishable_…) must be sent as apikey only.
+const syncHdrs =()=>{
+  const h={apikey:syncCfg.key, 'Content-Type':'application/json'};
+  if(syncCfg.key.startsWith('eyJ')) h.Authorization='Bearer '+syncCfg.key;
+  return h;
+};
 
 function schedulePush(){
   if(!syncCfg.enabled||!syncReady()||suppressPush) return;
