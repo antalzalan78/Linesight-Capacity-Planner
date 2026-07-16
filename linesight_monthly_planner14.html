@@ -554,9 +554,9 @@ const MN = ['January','February','March','April','May','June','July','August','S
 // STATE
 // ════════════════════════════════
 let lines = [
-  {name:'Line A', cap:450, demand:360, pg:'soda',   hc:4, hcDay:1},
-  {name:'Line B', cap:300, demand:310, pg:'bottle',  hc:3, hcDay:1},
-  {name:'Line C', cap:200, demand:140, pg:'rental',  hc:2, hcDay:0},
+  {name:'Line1', cap:450, demand:360, pg:'soda',   hc:4, hcDay:1},
+  {name:'Line2', cap:300, demand:310, pg:'bottle',  hc:3, hcDay:1},
+  {name:'Line3', cap:200, demand:140, pg:'rental',  hc:2, hcDay:0},
 ];
 let pgDemand   = {};   // [monthKey][pgKey] = number
 let weekOvr    = {};   // [monthKey][wi] = {days,oee,demFactor}
@@ -1302,11 +1302,17 @@ function renderMetrics(){
 // ════════════════════════════════
 function renderLines(){
   const body=document.getElementById('lines-body'); body.innerHTML='';
+  // fixed pool of line names; a legacy custom name is kept as an extra option
+  const nameOpts=cur=>{
+    const names=Array.from({length:8},(_,n)=>`Line${n+1}`);
+    if(cur&&!names.includes(cur)) names.unshift(cur);
+    return names.map(n=>`<option value="${n}"${n===cur?' selected':''}>${n}</option>`).join('');
+  };
   lines.forEach((l,i)=>{
     const opts=PGS.map(g=>`<option value="${g.key}"${g.key===l.pg?' selected':''}>${g.label}</option>`).join('');
     const tr=document.createElement('tr');
     tr.innerHTML=`
-      <td><input class="ni" value="${l.name}" oninput="lines[${i}].name=this.value;render()"></td>
+      <td><select class="si" onchange="lines[${i}].name=this.value;render()">${nameOpts(l.name)}</select></td>
       <td class="c"><input class="numi" type="number" value="${l.cap}" min="1" max="99999" oninput="lines[${i}].cap=+this.value||0;render()"></td>
       <td class="c"><input class="numi" type="number" value="${l.oee??''}" placeholder="${Math.round(getP().oee*100)}" min="30" max="100" title="Line OEE % (empty = base ${Math.round(getP().oee*100)}%)" oninput="lines[${i}].oee=this.value===''?null:+this.value;render()"></td>
       <td class="c"><input class="numi" type="number" value="${l.hc||0}" min="0" max="999" title="Operators per shift" oninput="lines[${i}].hc=+this.value||0;render()"></td>
@@ -2250,9 +2256,9 @@ function resetData(){
   if(!confirm('Reset all data to defaults?')) return;
   localStorage.removeItem('ls_planner');
   lines=[
-    {name:'Line A',cap:450,demand:360,pg:'soda',   hc:4, hcDay:1},
-    {name:'Line B',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
-    {name:'Line C',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
+    {name:'Line1',cap:450,demand:360,pg:'soda',   hc:4, hcDay:1},
+    {name:'Line2',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
+    {name:'Line3',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
   ];
   pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; rcDeadline=null; scenarios=[]; demandMode='pg';
   curDate=new Date(); curDate.setDate(1);
@@ -2313,7 +2319,14 @@ function render(){
   save();
 }
 
-function addLine(){ lines.push({name:`Line ${String.fromCharCode(65+lines.length)}`,cap:250,demand:200,pg:'soda',hc:2,hcDay:1}); render(); }
+function addLine(){
+  if(lines.length>=8) return;
+  const used=lines.map(l=>l.name);
+  let name='Line'+lines.length;
+  for(let n=1;n<=8;n++){ if(!used.includes('Line'+n)){ name='Line'+n; break; } }
+  lines.push({name,cap:250,demand:200,pg:'soda',hc:2,hcDay:1});
+  render();
+}
 function delLine(i){ if(lines.length>1){ lines.splice(i,1); render(); } }
 
 // Slider listeners
