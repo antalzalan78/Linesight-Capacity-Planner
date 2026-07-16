@@ -767,6 +767,13 @@ function renderHeadcount(){
   const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
   const wkReq  =weeks.map((w,wi)=>wkHC(w,m,wi));
   const wkAvail=weeks.map((w,wi)=>Math.round(workforce.ops*dailyH*absF*effDays(w,m,wi)));
+  // operators needed per week for full coverage (absence already grossed in via absF)
+  const opsNeeded=weeks.map((w,wi)=>{
+    const d=effDays(w,m,wi);
+    return d>0?Math.ceil(wkReq[wi]/(dailyH*absF*d)):0;
+  });
+  const peakNeed=Math.max(0,...opsNeeded);
+  const hireGap=wfSet?Math.max(0,peakNeed-workforce.ops):null;
 
   // ── Monthly summary strip ──
   let totFTE=0, totShift=0, totDay=0;
@@ -783,6 +790,7 @@ function renderHeadcount(){
     <div class="metric"><div class="metric-label">Peak week</div><div class="metric-val warn">${hu(Math.max(...wkReq))}</div><div class="metric-sub">labor hrs</div></div>
     <div class="metric"><div class="metric-label">Available operators</div><div class="metric-val">${wfSet?workforce.ops:'—'}</div><div class="metric-sub">${wfSet?(Math.round(dailyH*absF*10)/10)+' eff. h/day each':'set in Workforce card'}</div></div>
     <div class="metric"><div class="metric-label">Coverage</div><div class="metric-val ${wfSet?covCls:''}">${wfSet?cov+'%':'—'}</div><div class="metric-sub">available vs. required hrs</div></div>
+    <div class="metric"><div class="metric-label">Hiring suggestion</div><div class="metric-val ${hireGap===null?'':hireGap>0?'danger':'ok'}">${hireGap===null?'—':hireGap>0?'+'+hireGap:'✓ 0'}</div><div class="metric-sub">${hireGap===null?'set workforce first':hireGap>0?'operators for full coverage (absence incl.)':'headcount covers the plan'}</div></div>
   `;
 
   // ── Weekly coverage table ──
@@ -796,14 +804,12 @@ function renderHeadcount(){
       th.className=i===0?'':'c'; th.style.whiteSpace='nowrap'; chr.appendChild(th);
     });
     const cb=ct.createTBody();
-    let peakNeed=0;
     weeks.forEach((w,wi)=>{
       const days=effDays(w,m,wi);
       const req=wkReq[wi], avail=wkAvail[wi];
       const wcov=req>0?Math.round(avail/req*100):null;
-      const need=days>0?Math.ceil(req/(dailyH*absF*days)):0;
+      const need=opsNeeded[wi];
       const gap=need-workforce.ops;
-      peakNeed=Math.max(peakNeed,need);
       const tr=cb.insertRow();
       tr.innerHTML=`
         <td style="font-family:var(--mono);font-weight:500;">${w.label}</td>
@@ -1771,13 +1777,16 @@ function exportCSV(){
       rows.push([]);
       rows.push(['WEEKLY COVERAGE',`${workforce.ops} operators`,`${workforce.contract} h/week`,`absence ${workforce.absence}%`]);
       rows.push(['Week','Days','Required hrs','Available hrs','Coverage %','Ops needed','Gap']);
+      let peakNeed=0;
       weeks.forEach((w,wi)=>{
         const days=effDays(w,m,wi);
         const req=wkHC(w,m,wi);
         const avail=Math.round(workforce.ops*dailyH*absF*days);
         const need=days>0?Math.ceil(req/(dailyH*absF*days)):0;
+        peakNeed=Math.max(peakNeed,need);
         rows.push([w.label,days,req,avail,req>0?Math.round(avail/req*100):'',need,Math.max(0,need-workforce.ops)]);
       });
+      rows.push(['HIRING SUGGESTION','','','','','',Math.max(0,peakNeed-workforce.ops)]);
     }
   }
   else if(activeTab==='backlog'){
