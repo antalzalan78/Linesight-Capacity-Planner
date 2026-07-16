@@ -1495,16 +1495,21 @@ function renderMonthlyTable(){
   const year=curDate.getFullYear(),month=curDate.getMonth();
   document.getElementById('monthly-title').textContent=`${MN[month]} ${year} — 6 months`;
   const tbl=document.getElementById('month-table'); tbl.innerHTML='';
+  // capacity per product group as well, for groups that have lines assigned
+  const actPGs=PGS.filter(g=>lines.some(l=>l.pg===g.key));
   const hd=tbl.createTHead(), hr=hd.insertRow();
-  ['Month','Weeks','Capacity','Demand','Util%','Free cap.'].forEach((h,i)=>{
+  ['Month','Weeks',...actPGs.map(g=>g.label+' cap.'),'Total cap.','Demand','Util%','Free cap.'].forEach((h,i)=>{
     const th=document.createElement('th'); th.textContent=h;
-    th.className=i===0?'':'c'; hr.appendChild(th);
+    th.className=i===0?'':'c';
+    if(i>=2&&i<2+actPGs.length) th.style.color=actPGs[i-2].color;
+    hr.appendChild(th);
   });
   const body=tbl.createTBody(); const cA=[],dA=[],lA=[];
   for(let off=0;off<6;off++){
     const d=new Date(year,month+off,1), mn=d.getMonth(), yr=d.getFullYear(), m2=mk(d);
     const weeks=weeksOf(yr,mn); let cap=0,dem=0;
     weeks.forEach((w,wi)=>{ cap+=wkCap(w,m2,wi); dem+=wkDem(w,m2,wi,weeks); });
+    const pgCaps=actPGs.map(g=>lines.filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,weeks,m2),0));
     const ut=pct(dem,cap),sl=cap-dem;
     cA.push(cap); dA.push(dem); lA.push(`${MN[mn].slice(0,3)} ${yr}`);
     const tr=body.insertRow();
@@ -1512,7 +1517,8 @@ function renderMonthlyTable(){
     tr.innerHTML=`
       <td style="font-size:12px;font-weight:${off===0?500:400};">${MN[mn]} ${yr}${off===0?' ●':''}</td>
       <td class="c" style="font-family:var(--mono);">${weeks.length}</td>
-      <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(cap)}</td>
+      ${pgCaps.map((v,i)=>`<td class="c" style="font-family:var(--mono);color:${actPGs[i].color};">${hu(v)}</td>`).join('')}
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);font-weight:500;">${hu(cap)}</td>
       <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(dem)}</td>
       <td class="c"><span style="font-family:var(--mono);font-weight:500;color:${tCol(ut)};">${ut}%</span></td>
       <td class="c" style="font-family:var(--mono);color:${sl<0?'var(--red)':'var(--text2)'};">${sl>=0?'+':''}${hu(sl)}</td>
@@ -1719,14 +1725,16 @@ function exportCSV(){
     });
   }
   else if(activeTab==='monthly'){
+    const actPGs=PGS.filter(g=>lines.some(l=>l.pg===g.key));
     rows.push(['6-MONTH SUMMARY']);
-    rows.push(['Month','Weeks','Capacity','Demand','Util %','Free capacity']);
+    rows.push(['Month','Weeks',...actPGs.map(g=>g.label+' capacity'),'Total capacity','Demand','Util %','Free capacity']);
     for(let off=0;off<6;off++){
       const d=new Date(year,month+off,1), m2=mk(d);
       const wks=weeksOf(d.getFullYear(),d.getMonth());
       let cap=0,dem=0;
       wks.forEach((w,wi)=>{cap+=wkCap(w,m2,wi); dem+=wkDem(w,m2,wi,wks);});
-      rows.push([`${MN[d.getMonth()]} ${d.getFullYear()}`,wks.length,cap,dem,pct(dem,cap),cap-dem]);
+      const pgCaps=actPGs.map(g=>lines.filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,wks,m2),0));
+      rows.push([`${MN[d.getMonth()]} ${d.getFullYear()}`,wks.length,...pgCaps,cap,dem,pct(dem,cap),cap-dem]);
     }
   }
   else if(activeTab==='demand'){
