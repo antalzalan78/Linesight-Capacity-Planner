@@ -364,7 +364,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <div>
       <div class="card">
         <div class="section-label">Workforce availability</div>
-        <p class="info-text">Compare the planned labor-hour requirement with the operators actually available. Available hours = operators × (contract hrs ÷ 5) × working days, reduced by the absence rate. Leave operators at 0 to disable the check.</p>
+        <p class="info-text">Compare the planned labor-hour requirement with the operators actually available. Available hours = operators × (contract hrs ÷ 5) × working days, reduced by the absence rate. Leave operators at 0 to disable the check. The values below are the <strong>defaults</strong> — tick the box at the bottom to set different values for the selected month.</p>
         <div class="param-row">
           <div class="param-label-row"><span class="param-label">Available operators (headcount)</span></div>
           <input class="numi" type="number" id="wf-ops" min="0" max="9999" placeholder="0 = off" oninput="workforce.ops=+this.value||0;render()">
@@ -376,6 +376,25 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         <div class="param-row">
           <div class="param-label-row"><span class="param-label">Absence rate % (sickness, vacation)</span></div>
           <input class="numi" type="number" id="wf-abs" min="0" max="60" oninput="workforce.absence=+this.value||0;render()">
+        </div>
+        <div class="divider"></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="wf-ovr-on" onchange="toggleWfOvr(this.checked)">
+          <span>Month-specific values — <span id="wf-ovr-month" style="font-family:var(--mono);"></span></span>
+        </label>
+        <div id="wf-ovr-fields" style="display:none;margin-top:12px;padding:10px 12px;background:var(--bg3);border-radius:6px;">
+          <div class="param-row">
+            <div class="param-label-row"><span class="param-label">Operators this month</span></div>
+            <input class="numi" type="number" id="wfo-ops" min="0" max="9999" oninput="setWfo('ops',+this.value||0)">
+          </div>
+          <div class="param-row">
+            <div class="param-label-row"><span class="param-label">Contract hours / week</span></div>
+            <input class="numi" type="number" id="wfo-contract" min="1" max="80" oninput="setWfo('contract',+this.value||40)">
+          </div>
+          <div class="param-row">
+            <div class="param-label-row"><span class="param-label">Absence rate %</span></div>
+            <input class="numi" type="number" id="wfo-abs" min="0" max="60" oninput="setWfo('absence',+this.value||0)">
+          </div>
         </div>
       </div>
       <div class="card" style="margin-top:1.25rem;">
@@ -563,7 +582,8 @@ let weekOvr    = {};   // [monthKey][wi] = {days,oee,demFactor}
 let blOpen     = {};   // [monthKey][pgKey] = opening backlog (units)
 let calEvents  = {};   // ['YYYY-MM-DD'] = {label, type:'holiday'|'maint'}
 let calSeeded  = [];   // years already auto-seeded with NL public holidays
-let workforce  = {ops:0, contract:40, absence:8}; // available operators; ops=0 disables the coverage check
+let workforce  = {ops:0, contract:40, absence:8}; // default workforce; ops=0 disables the coverage check
+let wfOvr      = {};   // [monthKey] = {ops,contract,absence} — month-specific workforce override
 let rcDeadline = null; // 'YYYY-MM-DD' — backlog recovery calculator deadline
 let scenarios  = [];   // [{name, ts, state}] — full plan snapshots for comparison
 let demandMode = 'pg'; // 'pg' | 'rate'
@@ -750,6 +770,23 @@ function wkHC(week, m, wi){
 }
 
 // ════════════════════════════════
+// WORKFORCE (monthly override falls back to the defaults)
+// ════════════════════════════════
+function wfFor(m){ return Object.assign({}, workforce, wfOvr[m]||{}); }
+function toggleWfOvr(on){
+  const m=mk(curDate);
+  if(on) wfOvr[m]=Object.assign({}, wfFor(m));
+  else delete wfOvr[m];
+  render();
+}
+function setWfo(f,v){
+  const m=mk(curDate);
+  if(!wfOvr[m]) wfOvr[m]=Object.assign({}, workforce);
+  wfOvr[m][f]=v;
+  render();
+}
+
+// ════════════════════════════════
 // HEADCOUNT VIEW
 // ════════════════════════════════
 function renderHeadcount(){
@@ -758,22 +795,32 @@ function renderHeadcount(){
   const p=getP();
   document.getElementById('hc-month-label').textContent=`${MN[month]} ${year}`;
 
-  // ── Workforce inputs (focus-guarded) ──
+  // ── Workforce inputs (focus-guarded); defaults + monthly override ──
   [['wf-ops',workforce.ops||''],['wf-contract',workforce.contract],['wf-abs',workforce.absence]].forEach(([id,v])=>{
     const el=document.getElementById(id);
     if(document.activeElement!==el) el.value=v;
   });
-  const wfSet=workforce.ops>0;
-  const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
+  const eff=wfFor(m), hasOvr=!!wfOvr[m];
+  document.getElementById('wf-ovr-month').textContent=`${MN[month]} ${year}`;
+  document.getElementById('wf-ovr-on').checked=hasOvr;
+  document.getElementById('wf-ovr-fields').style.display=hasOvr?'block':'none';
+  if(hasOvr){
+    [['wfo-ops',eff.ops||''],['wfo-contract',eff.contract],['wfo-abs',eff.absence]].forEach(([id,v])=>{
+      const el=document.getElementById(id);
+      if(document.activeElement!==el) el.value=v;
+    });
+  }
+  const wfSet=eff.ops>0;
+  const dailyH=eff.contract/5, absF=1-eff.absence/100;
   const wkReq  =weeks.map((w,wi)=>wkHC(w,m,wi));
-  const wkAvail=weeks.map((w,wi)=>Math.round(workforce.ops*dailyH*absF*effDays(w,m,wi)));
+  const wkAvail=weeks.map((w,wi)=>Math.round(eff.ops*dailyH*absF*effDays(w,m,wi)));
   // operators needed per week for full coverage (absence already grossed in via absF)
   const opsNeeded=weeks.map((w,wi)=>{
     const d=effDays(w,m,wi);
     return d>0?Math.ceil(wkReq[wi]/(dailyH*absF*d)):0;
   });
   const peakNeed=Math.max(0,...opsNeeded);
-  const hireGap=wfSet?Math.max(0,peakNeed-workforce.ops):null;
+  const hireGap=wfSet?Math.max(0,peakNeed-eff.ops):null;
 
   // ── Monthly summary strip ──
   let totFTE=0, totShift=0, totDay=0;
@@ -788,7 +835,7 @@ function renderHeadcount(){
     <div class="metric"><div class="metric-label">Fixed daily staff</div><div class="metric-val">${hu(totDay)}</div><div class="metric-sub">labor hrs</div></div>
     <div class="metric"><div class="metric-label">Avg labor hrs / week</div><div class="metric-val">${hu(avgWk)}</div><div class="metric-sub">${weeks.length} weeks</div></div>
     <div class="metric"><div class="metric-label">Peak week</div><div class="metric-val warn">${hu(Math.max(...wkReq))}</div><div class="metric-sub">labor hrs</div></div>
-    <div class="metric"><div class="metric-label">Available operators</div><div class="metric-val">${wfSet?workforce.ops:'—'}</div><div class="metric-sub">${wfSet?(Math.round(dailyH*absF*10)/10)+' eff. h/day each':'set in Workforce card'}</div></div>
+    <div class="metric"><div class="metric-label">Available operators</div><div class="metric-val">${wfSet?eff.ops:'—'}</div><div class="metric-sub">${wfSet?(Math.round(dailyH*absF*10)/10)+' eff. h/day each'+(hasOvr?' · month override':''):'set in Workforce card'}</div></div>
     <div class="metric"><div class="metric-label">Coverage</div><div class="metric-val ${wfSet?covCls:''}">${wfSet?cov+'%':'—'}</div><div class="metric-sub">available vs. required hrs</div></div>
     <div class="metric"><div class="metric-label">Hiring suggestion</div><div class="metric-val ${hireGap===null?'':hireGap>0?'danger':'ok'}">${hireGap===null?'—':hireGap>0?'+'+hireGap:'✓ 0'}</div><div class="metric-sub">${hireGap===null?'set workforce first':hireGap>0?'operators for full coverage (absence incl.)':'headcount covers the plan'}</div></div>
   `;
@@ -809,7 +856,7 @@ function renderHeadcount(){
       const req=wkReq[wi], avail=wkAvail[wi];
       const wcov=req>0?Math.round(avail/req*100):null;
       const need=opsNeeded[wi];
-      const gap=need-workforce.ops;
+      const gap=need-eff.ops;
       const tr=cb.insertRow();
       tr.innerHTML=`
         <td style="font-family:var(--mono);font-weight:500;">${w.label}</td>
@@ -822,7 +869,7 @@ function renderHeadcount(){
       `;
     });
     const trT=cb.insertRow(); trT.className='tot';
-    const gapM=peakNeed-workforce.ops;
+    const gapM=peakNeed-eff.ops;
     trT.innerHTML=`
       <td colspan="2">MONTH</td>
       <td class="c">${hu(totFTE)}</td>
@@ -1622,11 +1669,12 @@ async function runAI(){
   });
 
   // Workforce coverage
-  if(workforce.ops>0){
-    const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
+  const W=wfFor(m);
+  if(W.ops>0){
+    const dailyH=W.contract/5, absF=1-W.absence/100;
     let req=0, avail=0;
-    weeks.forEach((w,wi)=>{ req+=wkHC(w,m,wi); avail+=workforce.ops*dailyH*absF*effDays(w,m,wi); });
-    summary+=`\nWORKFORCE: ${workforce.ops} operators available, ${workforce.contract}h/week contract, ${workforce.absence}% absence. Required ${Math.round(req).toLocaleString()} labor hrs vs available ${Math.round(avail).toLocaleString()} labor hrs (coverage ${pct(avail,req)}%).\n`;
+    weeks.forEach((w,wi)=>{ req+=wkHC(w,m,wi); avail+=W.ops*dailyH*absF*effDays(w,m,wi); });
+    summary+=`\nWORKFORCE: ${W.ops} operators available, ${W.contract}h/week contract, ${W.absence}% absence. Required ${Math.round(req).toLocaleString()} labor hrs vs available ${Math.round(avail).toLocaleString()} labor hrs (coverage ${pct(avail,req)}%).\n`;
   }
 
   // PG demand
@@ -1772,21 +1820,22 @@ function exportCSV(){
       const vals=lines.map(l=>lWkHC(l,w,m,wi));
       rows.push([w.label,`${fmt(w.start)}–${fmt(w.end)}`,days,...vals,vals.reduce((s,v)=>s+v,0)]);
     });
-    if(workforce.ops>0){
-      const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
+    const W=wfFor(m);
+    if(W.ops>0){
+      const dailyH=W.contract/5, absF=1-W.absence/100;
       rows.push([]);
-      rows.push(['WEEKLY COVERAGE',`${workforce.ops} operators`,`${workforce.contract} h/week`,`absence ${workforce.absence}%`]);
+      rows.push(['WEEKLY COVERAGE',`${W.ops} operators`,`${W.contract} h/week`,`absence ${W.absence}%`,wfOvr[m]?'month override':'default workforce']);
       rows.push(['Week','Days','Required hrs','Available hrs','Coverage %','Ops needed','Gap']);
       let peakNeed=0;
       weeks.forEach((w,wi)=>{
         const days=effDays(w,m,wi);
         const req=wkHC(w,m,wi);
-        const avail=Math.round(workforce.ops*dailyH*absF*days);
+        const avail=Math.round(W.ops*dailyH*absF*days);
         const need=days>0?Math.ceil(req/(dailyH*absF*days)):0;
         peakNeed=Math.max(peakNeed,need);
-        rows.push([w.label,days,req,avail,req>0?Math.round(avail/req*100):'',need,Math.max(0,need-workforce.ops)]);
+        rows.push([w.label,days,req,avail,req>0?Math.round(avail/req*100):'',need,Math.max(0,need-W.ops)]);
       });
-      rows.push(['HIRING SUGGESTION','','','','','',Math.max(0,peakNeed-workforce.ops)]);
+      rows.push(['HIRING SUGGESTION','','','','','',Math.max(0,peakNeed-W.ops)]);
     }
   }
   else if(activeTab==='backlog'){
@@ -1834,7 +1883,7 @@ function exportCSV(){
 // ════════════════════════════════
 function snapshotState(){
   return JSON.parse(JSON.stringify({
-    lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, demandMode,
+    lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, demandMode,
     sliders:{
       shifts:  document.getElementById('shifts').value,
       shiftlen:document.getElementById('shiftlen').value,
@@ -1847,6 +1896,7 @@ function applyState(s){
   lines=s.lines; pgDemand=s.pgDemand||{}; weekOvr=s.weekOvr||{}; blOpen=s.blOpen||{};
   calEvents=s.calEvents||{}; calSeeded=s.calSeeded||[];
   workforce=Object.assign({ops:0,contract:40,absence:8},s.workforce);
+  wfOvr=s.wfOvr||{};
   demandMode=s.demandMode||'pg';
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     if(s.sliders&&s.sliders[id]!==undefined) document.getElementById(id).value=s.sliders[id];
@@ -1868,9 +1918,10 @@ function computeMetrics(){
   const series=backlogSeries(m,weeks,totBLOpen(m));
   const closing=series.length?series[series.length-1].bl:0;
   let coverage=null;
-  if(workforce.ops>0&&labor>0){
-    const dailyH=workforce.contract/5, absF=1-workforce.absence/100;
-    const avail=weeks.reduce((s,w,wi)=>s+workforce.ops*dailyH*absF*effDays(w,m,wi),0);
+  const W=wfFor(m);
+  if(W.ops>0&&labor>0){
+    const dailyH=W.contract/5, absF=1-W.absence/100;
+    const avail=weeks.reduce((s,w,wi)=>s+W.ops*dailyH*absF*effDays(w,m,wi),0);
     coverage=Math.round(avail/labor*100);
   }
   return {cap,dem,util:pct(dem,cap),free:cap-dem,labor,coverage,closing,
@@ -2254,7 +2305,7 @@ function applySyncSettings(){
 function save(){
   try{
     localStorage.setItem('ls_planner', JSON.stringify({
-      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, rcDeadline, scenarios,
+      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, wfOvr, rcDeadline, scenarios,
       curDate: curDate.toISOString(),
       sliders: {
         shifts: document.getElementById('shifts').value,
@@ -2277,7 +2328,7 @@ function resetData(){
     {name:'Line2',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
     {name:'Line3',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
   ];
-  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; rcDeadline=null; scenarios=[]; demandMode='pg';
+  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; rcDeadline=null; scenarios=[]; demandMode='pg';
   curDate=new Date(); curDate.setDate(1);
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     const defaults={shifts:'2',shiftlen:'8',oee:'72',days:'5'};
@@ -2303,6 +2354,7 @@ function load(){
     if(d.calEvents)  calEvents=d.calEvents;
     if(d.calSeeded)  calSeeded=d.calSeeded;
     if(d.workforce)  workforce=Object.assign({ops:0,contract:40,absence:8},d.workforce);
+    if(d.wfOvr)      wfOvr=d.wfOvr;
     if(d.rcDeadline) rcDeadline=d.rcDeadline;
     if(d.scenarios)  scenarios=d.scenarios;
     if(d.demandMode) demandMode=d.demandMode;
