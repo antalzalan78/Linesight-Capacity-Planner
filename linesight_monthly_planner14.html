@@ -262,6 +262,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
           <div class="section-label" style="margin-bottom:0;">Batches — <span id="mps-batch-month"></span></div>
           <button class="add-btn" style="margin-top:0;" onclick="mpsExport()">⬇ Export Excel</button>
         </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+          <select id="mf-line" class="si" style="width:110px;" onchange="mpsFltLine=this.value;render()"></select>
+          <input type="date" id="mf-date" class="ni" style="width:150px;color-scheme:dark;" onchange="mpsFltDate=this.value;render()" title="Filter to a single day">
+          <button class="add-btn" style="margin-top:0;padding:4px 10px;" onclick="mpsFltLine='';mpsFltDate='';render()">✕ Clear</button>
+          <span id="mf-count" style="font-size:10px;color:var(--text2);margin-left:auto;"></span>
+        </div>
         <div style="overflow-x:auto;max-height:420px;overflow-y:auto;"><table class="gt" id="mps-batch-table"></table></div>
         <div class="divider"></div>
         <div style="display:grid;grid-template-columns:130px 90px 1fr 80px auto;gap:8px;align-items:center;">
@@ -2143,6 +2149,7 @@ function mpsShowMapping(){
   document.getElementById('mps-preview').innerHTML='';
 }
 let mpsCtx=null, mpsUnknown=[];
+let mpsFltLine='', mpsFltDate=''; // batch-table filters (not persisted)
 function mpsConvert(ci){
   const out=[], errs=[], unknown={}, skuInfo={};
   mpsRaw.slice(1).forEach((r,ri)=>{
@@ -2307,12 +2314,22 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+'
     gb.insertRow().innerHTML=html;
   });
 
-  // ── Batch table ──
+  // ── Batch table (with line/date filters) ──
+  const mfLine=document.getElementById('mf-line');
+  mfLine.innerHTML=`<option value="">All lines</option>`+lines.map(l=>`<option value="${l.name}"${l.name===mpsFltLine?' selected':''}>${l.name}</option>`).join('');
+  if(mpsFltLine&&!lines.some(l=>l.name===mpsFltLine)){ mpsFltLine=''; }
+  const mfDate=document.getElementById('mf-date');
+  if(document.activeElement!==mfDate) mfDate.value=mpsFltDate;
+  let shown=monthRows;
+  if(mpsFltLine) shown=shown.filter(r=>r.line===mpsFltLine);
+  if(mpsFltDate) shown=shown.filter(r=>r.date===mpsFltDate);
+  document.getElementById('mf-count').textContent=
+    (mpsFltLine||mpsFltDate)?`${shown.length} / ${monthRows.length} batches · ${hu(shown.reduce((s,r)=>s+r.qty,0))} units`:`${monthRows.length} batches`;
   const bt=document.getElementById('mps-batch-table'); bt.innerHTML='';
   const bh=bt.createTHead().insertRow();
   ['Date','Line','SKU','Group','Qty',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=i>=4?'c':''; bh.appendChild(th);});
   const bb=bt.createTBody();
-  monthRows.forEach(r=>{
+  shown.forEach(r=>{
     const gi=mps.indexOf(r);
     const s=skuOf(r.sku), grp=s&&s.pg?pg(s.pg):null;
     bb.insertRow().innerHTML=`
@@ -2324,7 +2341,7 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+'
       <td class="c"><button class="del-btn" onclick="delBatch(${gi})">✕</button></td>
     `;
   });
-  if(!monthRows.length) bb.insertRow().innerHTML='<td colspan="6" style="font-size:11px;color:var(--text2);border:none;">No batches this month — import an Excel or add rows below.</td>';
+  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="6" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
 
   // ── Add-batch form + SKU master ──
   const mbLine=document.getElementById('mb-line');
