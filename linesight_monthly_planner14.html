@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LineSight — Monthly Capacity Planner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 :root{
@@ -153,6 +154,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 
 <div class="tabs">
   <button class="tab active" onclick="switchTab('weekly')">Weekly View</button>
+  <button class="tab"        onclick="switchTab('mps')">MPS</button>
   <button class="tab"        onclick="switchTab('monthly')">Monthly Summary</button>
   <button class="tab"        onclick="switchTab('backlog')">Backlog Analysis</button>
   <button class="tab"        onclick="switchTab('demand')">Product Groups</button>
@@ -225,6 +227,51 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <div class="card">
         <div class="section-label">Line utilisation</div>
         <table class="gt" id="line-util-table"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MPS / BATCH PLAN ══ -->
+<div class="view-panel" id="panel-mps">
+  <div class="metrics-strip" id="mps-strip" style="margin-bottom:1.25rem;"></div>
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="section-label">MPS import (Excel / CSV)</div>
+        <p class="info-text">Load your daily batch plan from Excel. Pick the file, check the auto-detected column mapping (date · line · SKU · quantity), then apply. Batches of the imported months replace the existing ones; other months stay untouched.</p>
+        <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('mps-file').click()">⬆ Choose Excel/CSV…</button>
+        <input type="file" id="mps-file" accept=".xlsx,.xlsm,.xls,.csv" style="display:none" onchange="mpsFile(this.files[0]);this.value=''">
+        <div id="mps-map" style="margin-top:10px;"></div>
+        <div id="mps-preview" style="margin-top:10px;"></div>
+      </div>
+      <div class="card">
+        <div class="section-label">SKU master</div>
+        <p class="info-text">Assign each SKU to a product group — this connects the batch plan to the capacity model. Unknown SKUs from an import land here unassigned.</p>
+        <div id="sku-list"></div>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="card">
+        <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
+        <p class="info-text" style="margin-bottom:.75rem;">Planned quantity per line per day against the line's daily capacity. Red = overloaded day, yellow = batch on a weekend/holiday. Hover a cell for the SKU breakdown.</p>
+        <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <div class="section-label" style="margin-bottom:0;">Batches — <span id="mps-batch-month"></span></div>
+          <button class="add-btn" style="margin-top:0;" onclick="mpsExport()">⬇ Export Excel</button>
+        </div>
+        <div style="overflow-x:auto;max-height:420px;overflow-y:auto;"><table class="gt" id="mps-batch-table"></table></div>
+        <div class="divider"></div>
+        <div style="display:grid;grid-template-columns:130px 90px 1fr 80px auto;gap:8px;align-items:center;">
+          <input type="date" id="mb-date" class="ni" style="color-scheme:dark;">
+          <select id="mb-line" class="si"></select>
+          <input type="text" id="mb-sku" class="ni" placeholder="SKU code" list="sku-datalist">
+          <input type="number" id="mb-qty" class="numi" placeholder="qty" min="1">
+          <button class="add-btn" style="margin-top:0;" onclick="addBatch()">+ Add</button>
+        </div>
+        <datalist id="sku-datalist"></datalist>
       </div>
     </div>
   </div>
@@ -586,6 +633,8 @@ let workforce  = {ops:0, contract:40, absence:8}; // default workforce; ops=0 di
 let wfOvr      = {};   // [monthKey] = {ops,contract,absence} — month-specific workforce override
 let rcDeadline = null; // 'YYYY-MM-DD' — backlog recovery calculator deadline
 let scenarios  = [];   // [{name, ts, state}] — full plan snapshots for comparison
+let skus       = [];   // [{code, pg}] — SKU master; pg null = unassigned
+let mps        = [];   // [{date:'YYYY-MM-DD', line, sku, qty}] — daily batch plan
 let demandMode = 'pg'; // 'pg' | 'rate'
 let curDate    = new Date(); curDate.setDate(1);
 let charts     = {};
@@ -1324,7 +1373,7 @@ function delCalEvent(k){ delete calEvents[k]; render(); }
 function changeMonth(d){ curDate.setMonth(curDate.getMonth()+d); render(); }
 function switchTab(name){
   activeTab=name;
-  ['weekly','monthly','backlog','demand','headcount','chart','scenarios'].forEach((n,i)=>
+  ['weekly','mps','monthly','backlog','demand','headcount','chart','scenarios'].forEach((n,i)=>
     document.querySelectorAll('.tab')[i].classList.toggle('active',n===name));
   document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
@@ -1861,6 +1910,14 @@ function exportCSV(){
     });
   }
 
+  else if(activeTab==='mps'){
+    rows.push(['MPS BATCH PLAN']);
+    rows.push(['Date','Line','SKU','Product group','Qty']);
+    mps.filter(r=>mkOfDate(r.date)===m).forEach(r=>{
+      const s=skuOf(r.sku);
+      rows.push([r.date,r.line,r.sku,s&&s.pg?pg(s.pg).label:'',r.qty]);
+    });
+  }
   else if(activeTab==='scenarios'){
     const cols=scenarioCols();
     rows.push(['SCENARIO COMPARISON']);
@@ -1883,7 +1940,7 @@ function exportCSV(){
 // ════════════════════════════════
 function snapshotState(){
   return JSON.parse(JSON.stringify({
-    lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, demandMode,
+    lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, demandMode,
     sliders:{
       shifts:  document.getElementById('shifts').value,
       shiftlen:document.getElementById('shiftlen').value,
@@ -1897,6 +1954,7 @@ function applyState(s){
   calEvents=s.calEvents||{}; calSeeded=s.calSeeded||[];
   workforce=Object.assign({ops:0,contract:40,absence:8},s.workforce);
   wfOvr=s.wfOvr||{};
+  skus=s.skus||[]; mps=s.mps||[];
   demandMode=s.demandMode||'pg';
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     if(s.sliders&&s.sliders[id]!==undefined) document.getElementById(id).value=s.sliders[id];
@@ -1999,6 +2057,229 @@ function renderScenarios(){
       scales:{y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
               x:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}}}
   });
+}
+
+// ════════════════════════════════
+// MPS / BATCH PLAN
+// ════════════════════════════════
+const mkOfDate=ds=>{const [y,mo]=ds.split('-').map(Number); return `${y}-${mo-1}`;};
+const skuOf=c=>skus.find(s=>s.code===c);
+function normLine(v){
+  const t=String(v||'').trim().toLowerCase().replace(/\s+/g,'');
+  const hit=lines.find(l=>l.name.toLowerCase().replace(/\s+/g,'')===t);
+  return hit?hit.name:null;
+}
+function parseAnyDate(v){
+  if(v instanceof Date&&!isNaN(v)) return dk(v);
+  if(typeof v==='number'&&v>25000&&v<80000){ // Excel serial date
+    const d=new Date(Math.round((v-25569)*864e5));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  }
+  const s=String(v||'').trim();
+  let m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if(m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
+  m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); // dd/mm/yyyy (EU)
+  if(m) return `${m[3]}-${String(+m[2]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;
+  return null;
+}
+
+let mpsRaw=null, mpsPending=null;
+function mpsFile(file){
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      mpsRaw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''}).filter(r=>r.some(c=>String(c).trim()!==''));
+      if(mpsRaw.length<2){ document.getElementById('mps-map').innerHTML='<div style="font-size:11px;color:var(--red);">The sheet looks empty.</div>'; return; }
+      mpsShowMapping();
+    }catch(err){
+      document.getElementById('mps-map').innerHTML=`<div style="font-size:11px;color:var(--red);">Could not read the file — ${err.message}</div>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function mpsShowMapping(){
+  const head=mpsRaw[0].map((h,i)=>String(h).trim()||('Column '+(i+1)));
+  const guess=pats=>head.findIndex(h=>pats.some(p=>p.test(h)));
+  const g={
+    date:guess([/date|datum|day|nap/i]),
+    line:guess([/line|vonal|lijn/i]),
+    sku: guess([/sku|item|product|artikel|cikk|material/i]),
+    qty: guess([/qty|quant|menny|volume|amount|aantal|pcs|db|cases/i]),
+  };
+  const sel=(id,gi)=>`<select id="mm-${id}" class="si" style="width:100%;">${head.map((h,i)=>`<option value="${i}"${i===gi?' selected':''}>${h}</option>`).join('')}</select>`;
+  document.getElementById('mps-map').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;">
+      <div><div style="color:var(--text2);margin-bottom:3px;">Date column</div>${sel('date',g.date)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Line column</div>${sel('line',g.line)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">SKU column</div>${sel('sku',g.sku)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Quantity column</div>${sel('qty',g.qty)}</div>
+    </div>
+    <button class="add-btn" onclick="mpsParse()">→ Parse rows</button>
+  `;
+  document.getElementById('mps-preview').innerHTML='';
+}
+function mpsParse(){
+  const col=id=>+document.getElementById('mm-'+id).value;
+  const ci={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty')};
+  const out=[], errs=[];
+  mpsRaw.slice(1).forEach((r,ri)=>{
+    const date=parseAnyDate(r[ci.date]);
+    const line=normLine(r[ci.line]);
+    const skuC=String(r[ci.sku]||'').trim();
+    const qty=Math.round(+String(r[ci.qty]).replace(/[^\d.-]/g,''))||0;
+    if(!date){ errs.push(`Row ${ri+2}: bad date "${r[ci.date]}"`); return; }
+    if(!line){ errs.push(`Row ${ri+2}: unknown line "${r[ci.line]}"`); return; }
+    if(!skuC){ errs.push(`Row ${ri+2}: empty SKU`); return; }
+    if(qty<=0){ errs.push(`Row ${ri+2}: bad qty "${r[ci.qty]}"`); return; }
+    out.push({date,line,sku:skuC,qty});
+  });
+  mpsPending=out.length?out:null;
+  const el=document.getElementById('mps-preview');
+  if(!out.length){ el.innerHTML=`<div style="font-size:11px;color:var(--red);">No valid rows. ${errs[0]||''}</div>`; return; }
+  const months=[...new Set(out.map(o=>mkOfDate(o.date)))];
+  const mLbl=k=>{const [y,mo]=k.split('-').map(Number); return `${MN[mo].slice(0,3)} ${y}`;};
+  const newSkus=[...new Set(out.map(o=>o.sku))].filter(c=>!skuOf(c));
+  el.innerHTML=`
+    <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">
+      <strong style="color:var(--text);">${out.length}</strong> batches · ${months.map(mLbl).join(', ')} ·
+      ${[...new Set(out.map(o=>o.sku))].length} SKUs${newSkus.length?` (<span style="color:var(--yellow);">${newSkus.length} new</span>)`:''}
+      ${errs.length?` · <span style="color:var(--yellow);">${errs.length} rows skipped</span>`:''}
+    </div>
+    ${errs.slice(0,3).map(e=>`<div style="font-size:10px;color:var(--yellow);">${e}</div>`).join('')}
+    <div style="display:flex;gap:8px;">
+      <button class="add-btn" style="border-color:var(--green);color:var(--green);" onclick="mpsApply()">✓ Apply import</button>
+      <button class="add-btn" onclick="mpsPending=null;document.getElementById('mps-preview').innerHTML='';document.getElementById('mps-map').innerHTML=''">Cancel</button>
+    </div>
+  `;
+}
+function mpsApply(){
+  if(!mpsPending) return;
+  const months=new Set(mpsPending.map(o=>mkOfDate(o.date)));
+  mps=mps.filter(r=>!months.has(mkOfDate(r.date))).concat(mpsPending);
+  mps.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.line.localeCompare(b.line));
+  [...new Set(mpsPending.map(o=>o.sku))].forEach(c=>{ if(!skuOf(c)) skus.push({code:c,pg:null}); });
+  const n=mpsPending.length; mpsPending=null; mpsRaw=null;
+  document.getElementById('mps-map').innerHTML='';
+  document.getElementById('mps-preview').innerHTML=`<div style="font-size:11px;color:var(--green);">✓ ${n} batches imported.</div>`;
+  render();
+}
+function addBatch(){
+  const date=document.getElementById('mb-date').value;
+  const line=document.getElementById('mb-line').value;
+  const skuC=document.getElementById('mb-sku').value.trim();
+  const qty=+document.getElementById('mb-qty').value||0;
+  if(!date||!line||!skuC||qty<=0) return;
+  if(!skuOf(skuC)) skus.push({code:skuC,pg:null});
+  mps.push({date,line,sku:skuC,qty});
+  mps.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.line.localeCompare(b.line));
+  document.getElementById('mb-sku').value=''; document.getElementById('mb-qty').value='';
+  render();
+}
+function delBatch(i){ mps.splice(i,1); render(); }
+function mpsExport(){
+  const m=mk(curDate);
+  const rows=mps.filter(r=>mkOfDate(r.date)===m).map(r=>{
+    const s=skuOf(r.sku);
+    return {Date:r.date, Line:r.line, SKU:r.sku, 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty};
+  });
+  if(!rows.length){ alert('No batches in the selected month to export.'); return; }
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:8},{wch:16},{wch:14},{wch:10}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'MPS');
+  XLSX.writeFile(wb,`linesight_mps_${curDate.getFullYear()}-${String(curDate.getMonth()+1).padStart(2,'0')}.xlsx`);
+}
+function renderMPS(){
+  const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate), p=getP();
+  const label=`${MN[month]} ${year}`;
+  document.getElementById('mps-month-label').textContent=label;
+  document.getElementById('mps-batch-month').textContent=label;
+  seedYear(year);
+  const monthRows=mps.filter(r=>mkOfDate(r.date)===m);
+  const totQty=monthRows.reduce((s,r)=>s+r.qty,0);
+  const days=new Date(year,month+1,0).getDate();
+  const base=Math.round(p.oee*100);
+  const dayCap=l=>Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*p.shifts);
+  const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
+  const cell={};
+  monthRows.forEach(r=>{const d=+r.date.split('-')[2]; (cell[r.line]??={})[d]=(cell[r.line][d]||0)+r.qty;});
+  let overDays=0, offDays=0;
+  lines.forEach(l=>{ for(let d=1;d<=days;d++){ const q=cell[l.name]?.[d]||0; if(!q) continue; if(!isWork(d)) offDays++; else if(q>dayCap(l)) overDays++; }});
+  const unSkus=skus.filter(s=>!s.pg).length;
+  document.getElementById('mps-strip').innerHTML=`
+    <div class="metric"><div class="metric-label">Batches this month</div><div class="metric-val">${monthRows.length}</div><div class="metric-sub">${[...new Set(monthRows.map(r=>r.sku))].length} SKUs</div></div>
+    <div class="metric"><div class="metric-label">Planned quantity</div><div class="metric-val">${hu(totQty)}</div><div class="metric-sub">units</div></div>
+    <div class="metric"><div class="metric-label">Overloaded line-days</div><div class="metric-val ${overDays?'danger':'ok'}">${overDays}</div><div class="metric-sub">qty above daily capacity</div></div>
+    <div class="metric"><div class="metric-label">Off-day batches</div><div class="metric-val ${offDays?'warn':'ok'}">${offDays}</div><div class="metric-sub">on weekend / holiday</div></div>
+    <div class="metric"><div class="metric-label">Unassigned SKUs</div><div class="metric-val ${unSkus?'warn':'ok'}">${unSkus}</div><div class="metric-sub">no product group</div></div>
+  `;
+
+  // ── Daily line×day grid ──
+  const g=document.getElementById('mps-grid'); g.innerHTML='';
+  const hr=g.createTHead().insertRow();
+  const thL=document.createElement('th'); thL.textContent='Line'; thL.style.width='52px'; hr.appendChild(thL);
+  for(let d=1;d<=days;d++){
+    const th=document.createElement('th'); th.textContent=d; th.className='c';
+    th.style.cssText='padding:2px 1px;font-size:8px;'+(isWork(d)?'':'opacity:.35;');
+    hr.appendChild(th);
+  }
+  const gb=g.createTBody();
+  lines.forEach(l=>{
+    const cap=dayCap(l);
+    let html=`<td style="font-family:var(--mono);font-size:10px;">${l.name}</td>`;
+    for(let d=1;d<=days;d++){
+      const q=cell[l.name]?.[d]||0;
+      const wk=isWork(d);
+      let bg=q?'rgba(29,158,117,0.18)':'transparent', col=q?'var(--green-l)':'var(--text2)';
+      if(q&&!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
+      else if(q&&q>cap){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
+      else if(!q&&!wk) bg='rgba(255,255,255,0.02)';
+      const tip=q?` title="${l.name} · day ${d}: ${hu(q)} / cap ${hu(cap)}
+${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+': '+hu(r.qty)).join('\n')}"`:'';
+      html+=`<td class="c"${tip} style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};">${q?(Math.round(q/1000)||'<1'):''}</td>`;
+    }
+    gb.insertRow().innerHTML=html;
+  });
+
+  // ── Batch table ──
+  const bt=document.getElementById('mps-batch-table'); bt.innerHTML='';
+  const bh=bt.createTHead().insertRow();
+  ['Date','Line','SKU','Group','Qty',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=i>=4?'c':''; bh.appendChild(th);});
+  const bb=bt.createTBody();
+  monthRows.forEach(r=>{
+    const gi=mps.indexOf(r);
+    const s=skuOf(r.sku), grp=s&&s.pg?pg(s.pg):null;
+    bb.insertRow().innerHTML=`
+      <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.date.slice(5)}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${r.line}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
+      <td>${grp?`<span class="pg-dot" style="background:${grp.color};"></span><span style="font-size:10px;">${grp.label}</span>`:'<span style="font-size:10px;color:var(--yellow);">—</span>'}</td>
+      <td class="c" style="width:70px;"><input class="wni" type="number" style="width:60px;" value="${r.qty}" min="1" oninput="mps[${gi}].qty=+this.value||0;render()"></td>
+      <td class="c"><button class="del-btn" onclick="delBatch(${gi})">✕</button></td>
+    `;
+  });
+  if(!monthRows.length) bb.insertRow().innerHTML='<td colspan="6" style="font-size:11px;color:var(--text2);border:none;">No batches this month — import an Excel or add rows below.</td>';
+
+  // ── Add-batch form + SKU master ──
+  const mbLine=document.getElementById('mb-line');
+  if(document.activeElement!==mbLine) mbLine.innerHTML=lines.map(l=>`<option value="${l.name}">${l.name}</option>`).join('');
+  document.getElementById('sku-datalist').innerHTML=skus.map(s=>`<option value="${s.code}">`).join('');
+  if(!document.getElementById('mb-date').value)
+    document.getElementById('mb-date').value=`${year}-${String(month+1).padStart(2,'0')}-01`;
+  const sl=document.getElementById('sku-list');
+  sl.innerHTML=skus.length?skus.map((s,i)=>{
+    const cnt=mps.filter(r=>r.sku===s.code).length;
+    const opts=`<option value=""${!s.pg?' selected':''}>— unassigned</option>`+PGS.map(g2=>`<option value="${g2.key}"${g2.key===s.pg?' selected':''}>${g2.label}</option>`).join('');
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:.5px solid var(--border);">
+      <span style="font-family:var(--mono);font-size:11px;flex:1;${!s.pg?'color:var(--yellow);':''}">${s.code}</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text2);" title="batches using this SKU">${cnt}×</span>
+      <select class="si" style="width:120px;" onchange="skus[${i}].pg=this.value||null;render()">${opts}</select>
+      ${cnt===0?`<button class="del-btn" title="Delete unused SKU" onclick="skus.splice(${i},1);render()">✕</button>`:'<span style="width:25px;"></span>'}
+    </div>`;
+  }).join(''):'<div class="info-text" style="margin:0;">No SKUs yet — they are created automatically on import.</div>';
 }
 
 // ════════════════════════════════
@@ -2305,7 +2586,7 @@ function applySyncSettings(){
 function save(){
   try{
     localStorage.setItem('ls_planner', JSON.stringify({
-      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, wfOvr, rcDeadline, scenarios,
+      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, rcDeadline, scenarios,
       curDate: curDate.toISOString(),
       sliders: {
         shifts: document.getElementById('shifts').value,
@@ -2328,7 +2609,7 @@ function resetData(){
     {name:'Line2',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
     {name:'Line3',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
   ];
-  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; rcDeadline=null; scenarios=[]; demandMode='pg';
+  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; skus=[]; mps=[]; rcDeadline=null; scenarios=[]; demandMode='pg';
   curDate=new Date(); curDate.setDate(1);
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     const defaults={shifts:'2',shiftlen:'8',oee:'72',days:'5'};
@@ -2355,6 +2636,8 @@ function load(){
     if(d.calSeeded)  calSeeded=d.calSeeded;
     if(d.workforce)  workforce=Object.assign({ops:0,contract:40,absence:8},d.workforce);
     if(d.wfOvr)      wfOvr=d.wfOvr;
+    if(d.skus)       skus=d.skus;
+    if(d.mps)        mps=d.mps;
     if(d.rcDeadline) rcDeadline=d.rcDeadline;
     if(d.scenarios)  scenarios=d.scenarios;
     if(d.demandMode) demandMode=d.demandMode;
@@ -2379,6 +2662,7 @@ function render(){
   renderMetrics();
   renderLines();
   if(activeTab==='weekly')     { renderWeeklyGrid(); renderCalendar(); }
+  if(activeTab==='mps')        renderMPS();
   if(activeTab==='monthly')    renderMonthlyTable();
   if(activeTab==='backlog')    renderBacklog();
   if(activeTab==='demand')     renderDemandView();
