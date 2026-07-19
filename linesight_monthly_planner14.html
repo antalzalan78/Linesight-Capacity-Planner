@@ -64,6 +64,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #hc-weekly-table{table-layout:fixed;font-size:11px;}
 #hc-weekly-table td, #hc-weekly-table th{padding:4px 4px;overflow:hidden;}
 #lines-table td, #lines-table th{padding:4px 3px;}
+.mps-chip{cursor:grab;border-radius:3px;padding:0 2px;margin:1px auto;background:rgba(255,255,255,0.07);max-width:26px;}
+.mps-chip:active{cursor:grabbing;}
 #lines-table .ni, #lines-table .numi{font-size:12px;padding:4px 4px;}
 #lines-table .si{font-size:10px;padding:4px 3px;}
 .gt th{font-family:var(--mono);font-size:10px;color:var(--text2);font-weight:400;padding:0 5px 8px;text-align:left;border-bottom:.5px solid var(--border);}
@@ -237,7 +239,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   <div class="metrics-strip" id="mps-strip" style="margin-bottom:1.25rem;"></div>
   <div class="card">
     <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
-        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details. <strong>Drag a batch cell onto another day or line to reschedule it.</strong></p>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule that single batch.</strong></p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
       </div>
       <div class="card">
@@ -2254,24 +2256,23 @@ function addBatch(){
 }
 function delBatch(i){ mps.splice(i,1); render(); }
 function mpsResort(){ mps.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.line.localeCompare(b.line)); }
-// Move every batch booked on srcLine/srcDay to tgtLine/tgtDay (drag & drop on the grid)
-function moveBatches(sl,sd,tl,td2){
-  if(sl===tl&&sd===td2) return;
+// Move ONE batch (by its mps index) to tgtLine/tgtDay (drag & drop on the grid)
+function moveBatch(gi,tl,td2){
+  const r=mps[gi]; if(!r) return;
   const y=curDate.getFullYear(), mo=String(curDate.getMonth()+1).padStart(2,'0');
-  const sDate=`${y}-${mo}-${String(sd).padStart(2,'0')}`;
   const tDate=`${y}-${mo}-${String(td2).padStart(2,'0')}`;
-  let n=0;
-  mps.forEach(r=>{ if(r.line===sl&&r.date===sDate){ r.line=tl; r.date=tDate; n++; } });
-  if(n){ mpsResort(); render(); }
+  if(r.line===tl&&r.date===tDate) return;
+  r.line=tl; r.date=tDate;
+  mpsResort(); render();
 }
 // Grid drag & drop (delegated once — the table element survives re-renders)
 (function(){
   const grid=document.getElementById('mps-grid');
   let src=null;
   grid.addEventListener('dragstart',e=>{
-    const td=e.target.closest('td[draggable="true"]');
-    if(!td){ e.preventDefault(); return; }
-    src={line:td.dataset.line, day:+td.dataset.day};
+    const chip=e.target.closest('.mps-chip[draggable="true"]');
+    if(!chip){ e.preventDefault(); return; }
+    src={gi:+chip.dataset.gi};
     if(e.dataTransfer){ e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain',''); }catch(_){} }
   });
   grid.addEventListener('dragover',e=>{
@@ -2292,7 +2293,7 @@ function moveBatches(sl,sd,tl,td2){
     const td=e.target.closest('td[data-day]');
     if(!td||!src) return;
     e.preventDefault();
-    moveBatches(src.line,src.day,td.dataset.line,+td.dataset.day);
+    moveBatch(src.gi,td.dataset.line,+td.dataset.day);
     src=null;
   });
   grid.addEventListener('dragend',()=>{ src=null; });
@@ -2324,8 +2325,12 @@ function renderMPS(){
   const base=Math.round(p.oee*100);
   const dayCap=l=>Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*p.shifts);
   const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
-  const cell={};
-  monthRows.forEach(r=>{const d=+r.date.split('-')[2]; (cell[r.line]??={})[d]=(cell[r.line][d]||0)+r.qty;});
+  const cell={}, cellB={};
+  monthRows.forEach(r=>{
+    const d=+r.date.split('-')[2];
+    (cell[r.line]??={})[d]=(cell[r.line][d]||0)+r.qty;
+    ((cellB[r.line]??={})[d]??=[]).push({gi:mps.indexOf(r), r});
+  });
   // Spill-over model: a batch is booked on its start day and keeps producing on the
   // following idle working days (multi-day batches). carryOut = what still has to run
   // after that day; red only where the carry never returns to zero within the month.
@@ -2379,7 +2384,8 @@ function renderMPS(){
       const wk=isWork(d);
       let bg='transparent', col='var(--text2)', txt='';
       if(a.load>0){
-        txt=k1(a.load);
+        const list=(cellB[l.name]||{})[d]||[];
+        txt=list.map(({gi,r})=>`<div class="mps-chip" draggable="true" data-gi="${gi}" title="${r.sku}${r.job?' ['+r.job+']':''}: ${hu(r.qty)}">${k1(r.qty)}</div>`).join('');
         if(!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
         else if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else if(a.carryIn>0||a.carryOut>0){ bg='rgba(55,138,221,0.2)'; col='var(--blue-l)'; }
@@ -2392,8 +2398,7 @@ function renderMPS(){
       const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: planned ${hu(a.load)} / cap ${hu(wk?cap:0)}
 carry-in ${hu(a.carryIn)} → produced ${hu(a.prod)} → carry-over ${hu(a.carryOut)}
 ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(r.job?' ['+r.job+']':'')+': '+hu(r.qty)).join('\n')}"`:'';
-      const drag=a.load>0?` draggable="true"`:'';
-      html+=`<td class="c"${tip}${drag} data-line="${l.name}" data-day="${d}" style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};${a.load>0?'cursor:grab;':''}">${txt}</td>`;
+      html+=`<td class="c"${tip} data-line="${l.name}" data-day="${d}" style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
     }
     gb.insertRow().innerHTML=html;
   });
