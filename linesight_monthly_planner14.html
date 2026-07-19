@@ -254,7 +254,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <div class="col-right">
       <div class="card">
         <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
-        <p class="info-text" style="margin-bottom:.75rem;">Planned quantity per line per day against the line's daily capacity. Red = overloaded day, yellow = batch on a weekend/holiday. Hover a cell for the SKU breakdown.</p>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details.</p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
       </div>
       <div class="card">
@@ -2277,13 +2277,36 @@ function renderMPS(){
   const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
   const cell={};
   monthRows.forEach(r=>{const d=+r.date.split('-')[2]; (cell[r.line]??={})[d]=(cell[r.line][d]||0)+r.qty;});
+  // Spill-over model: a batch is booked on its start day and keeps producing on the
+  // following idle working days (multi-day batches). carryOut = what still has to run
+  // after that day; red only where the carry never returns to zero within the month.
+  const spill={}, nClear={};
+  lines.forEach(l=>{
+    const cap=dayCap(l);
+    let carry=0; const arr=[];
+    for(let d=1;d<=days;d++){
+      const load=cell[l.name]?.[d]||0;
+      const c=isWork(d)?cap:0;
+      const prod=Math.min(c,load+carry);
+      arr[d]={load,carryIn:carry,prod,carryOut:load+carry-prod};
+      carry=arr[d].carryOut;
+    }
+    spill[l.name]=arr;
+    const nc=[]; let sufMin=Infinity;
+    for(let d=days;d>=1;d--){ sufMin=Math.min(sufMin,arr[d].carryOut); nc[d]=sufMin>0; }
+    nClear[l.name]=nc;
+  });
   let overDays=0, offDays=0;
-  lines.forEach(l=>{ for(let d=1;d<=days;d++){ const q=cell[l.name]?.[d]||0; if(!q) continue; if(!isWork(d)) offDays++; else if(q>dayCap(l)) overDays++; }});
+  lines.forEach(l=>{ for(let d=1;d<=days;d++){
+    const a=spill[l.name][d];
+    if(a.load>0&&!isWork(d)) offDays++;
+    if(isWork(d)&&(a.load>0||a.carryIn>0)&&nClear[l.name][d]) overDays++;
+  }});
   const unSkus=skus.filter(s=>!s.pg).length;
   document.getElementById('mps-strip').innerHTML=`
     <div class="metric"><div class="metric-label">Batches this month</div><div class="metric-val">${monthRows.length}</div><div class="metric-sub">${[...new Set(monthRows.map(r=>r.sku))].length} SKUs</div></div>
     <div class="metric"><div class="metric-label">Planned quantity</div><div class="metric-val">${hu(totQty)}</div><div class="metric-sub">units</div></div>
-    <div class="metric"><div class="metric-label">Overloaded line-days</div><div class="metric-val ${overDays?'danger':'ok'}">${overDays}</div><div class="metric-sub">qty above daily capacity</div></div>
+    <div class="metric"><div class="metric-label">Overloaded line-days</div><div class="metric-val ${overDays?'danger':'ok'}">${overDays}</div><div class="metric-sub">spill-over cannot absorb</div></div>
     <div class="metric"><div class="metric-label">Off-day batches</div><div class="metric-val ${offDays?'warn':'ok'}">${offDays}</div><div class="metric-sub">on weekend / holiday</div></div>
     <div class="metric"><div class="metric-label">Unassigned SKUs</div><div class="metric-val ${unSkus?'warn':'ok'}">${unSkus}</div><div class="metric-sub">no product group</div></div>
   `;
@@ -2298,19 +2321,29 @@ function renderMPS(){
     hr.appendChild(th);
   }
   const gb=g.createTBody();
+  const k1=v=>Math.round(v/1000)||'<1';
   lines.forEach(l=>{
     const cap=dayCap(l);
     let html=`<td style="font-family:var(--mono);font-size:10px;">${l.name}</td>`;
     for(let d=1;d<=days;d++){
-      const q=cell[l.name]?.[d]||0;
+      const a=spill[l.name][d];
       const wk=isWork(d);
-      let bg=q?'rgba(29,158,117,0.18)':'transparent', col=q?'var(--green-l)':'var(--text2)';
-      if(q&&!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
-      else if(q&&q>cap){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
-      else if(!q&&!wk) bg='rgba(255,255,255,0.02)';
-      const tip=q?` title="${l.name} · day ${d}: ${hu(q)} / cap ${hu(cap)}
+      let bg='transparent', col='var(--text2)', txt='';
+      if(a.load>0){
+        txt=k1(a.load);
+        if(!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
+        else if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
+        else if(a.carryIn>0||a.carryOut>0){ bg='rgba(55,138,221,0.2)'; col='var(--blue-l)'; }
+        else { bg='rgba(29,158,117,0.18)'; col='var(--green-l)'; }
+      } else if(a.carryIn>0&&wk){
+        txt='↳'+k1(a.prod);
+        if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
+        else { bg='rgba(55,138,221,0.12)'; col='var(--blue-l)'; }
+      } else if(!wk) bg='rgba(255,255,255,0.02)';
+      const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: planned ${hu(a.load)} / cap ${hu(wk?cap:0)}
+carry-in ${hu(a.carryIn)} → produced ${hu(a.prod)} → carry-over ${hu(a.carryOut)}
 ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+': '+hu(r.qty)).join('\n')}"`:'';
-      html+=`<td class="c"${tip} style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};">${q?(Math.round(q/1000)||'<1'):''}</td>`;
+      html+=`<td class="c"${tip} style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
     }
     gb.insertRow().innerHTML=html;
   });
