@@ -235,25 +235,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 <!-- ══ MPS / BATCH PLAN ══ -->
 <div class="view-panel" id="panel-mps">
   <div class="metrics-strip" id="mps-strip" style="margin-bottom:1.25rem;"></div>
-  <div class="layout">
-    <div>
-      <div class="card">
-        <div class="section-label">MPS import (Excel / CSV)</div>
-        <p class="info-text">Load your daily batch plan from Excel. Pick the file, check the auto-detected column mapping (date · line · SKU · quantity), then apply. Batches of the imported months replace the existing ones; other months stay untouched.</p>
-        <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('mps-file').click()">⬆ Choose Excel/CSV…</button>
-        <input type="file" id="mps-file" accept=".xlsx,.xlsm,.xls,.csv" style="display:none" onchange="mpsFile(this.files[0]);this.value=''">
-        <div id="mps-map" style="margin-top:10px;"></div>
-        <div id="mps-preview" style="margin-top:10px;"></div>
-      </div>
-      <div class="card">
-        <div class="section-label">SKU master</div>
-        <p class="info-text">Assign each SKU to a product group — this connects the batch plan to the capacity model. Unknown SKUs from an import land here unassigned.</p>
-        <div id="sku-list"></div>
-      </div>
-    </div>
-    <div class="col-right">
-      <div class="card">
-        <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
+  <div class="card">
+    <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
         <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details. <strong>Drag a batch cell onto another day or line to reschedule it.</strong></p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
       </div>
@@ -280,6 +263,19 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         </div>
         <datalist id="sku-datalist"></datalist>
       </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1.25rem;align-items:start;">
+    <div class="card">
+      <div class="section-label">MPS import (Excel / CSV)</div>
+      <p class="info-text">Load your daily batch plan from Excel. Pick the file, check the auto-detected column mapping (date · line · SKU · quantity), then apply. Batches of the imported months replace the existing ones; other months stay untouched.</p>
+      <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('mps-file').click()">⬆ Choose Excel/CSV…</button>
+      <input type="file" id="mps-file" accept=".xlsx,.xlsm,.xls,.csv" style="display:none" onchange="mpsFile(this.files[0]);this.value=''">
+      <div id="mps-map" style="margin-top:10px;"></div>
+      <div id="mps-preview" style="margin-top:10px;"></div>
+    </div>
+    <div class="card">
+      <div class="section-label">SKU master</div>
+      <p class="info-text">Assign each SKU to a product group — this connects the batch plan to the capacity model. Unknown SKUs from an import land here unassigned.</p>
+      <div id="sku-list"></div>
     </div>
   </div>
 </div>
