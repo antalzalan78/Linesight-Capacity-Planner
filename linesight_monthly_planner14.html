@@ -254,7 +254,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <div class="col-right">
       <div class="card">
         <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
-        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details.</p>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details. <strong>Drag a batch cell onto another day or line to reschedule it.</strong></p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
       </div>
       <div class="card">
@@ -2251,6 +2251,49 @@ function addBatch(){
 }
 function delBatch(i){ mps.splice(i,1); render(); }
 function mpsResort(){ mps.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.line.localeCompare(b.line)); }
+// Move every batch booked on srcLine/srcDay to tgtLine/tgtDay (drag & drop on the grid)
+function moveBatches(sl,sd,tl,td2){
+  if(sl===tl&&sd===td2) return;
+  const y=curDate.getFullYear(), mo=String(curDate.getMonth()+1).padStart(2,'0');
+  const sDate=`${y}-${mo}-${String(sd).padStart(2,'0')}`;
+  const tDate=`${y}-${mo}-${String(td2).padStart(2,'0')}`;
+  let n=0;
+  mps.forEach(r=>{ if(r.line===sl&&r.date===sDate){ r.line=tl; r.date=tDate; n++; } });
+  if(n){ mpsResort(); render(); }
+}
+// Grid drag & drop (delegated once — the table element survives re-renders)
+(function(){
+  const grid=document.getElementById('mps-grid');
+  let src=null;
+  grid.addEventListener('dragstart',e=>{
+    const td=e.target.closest('td[draggable="true"]');
+    if(!td){ e.preventDefault(); return; }
+    src={line:td.dataset.line, day:+td.dataset.day};
+    if(e.dataTransfer){ e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain',''); }catch(_){} }
+  });
+  grid.addEventListener('dragover',e=>{
+    const td=e.target.closest('td[data-day]');
+    if(!td||!src) return;
+    e.preventDefault();
+    if(e.dataTransfer) e.dataTransfer.dropEffect='move';
+  });
+  grid.addEventListener('dragenter',e=>{
+    const td=e.target.closest('td[data-day]');
+    if(td&&src) td.style.outline='1px solid var(--green)';
+  });
+  grid.addEventListener('dragleave',e=>{
+    const td=e.target.closest('td[data-day]');
+    if(td) td.style.outline='';
+  });
+  grid.addEventListener('drop',e=>{
+    const td=e.target.closest('td[data-day]');
+    if(!td||!src) return;
+    e.preventDefault();
+    moveBatches(src.line,src.day,td.dataset.line,+td.dataset.day);
+    src=null;
+  });
+  grid.addEventListener('dragend',()=>{ src=null; });
+})();
 function setBatchDate(i,v){ if(v) mps[i].date=v; mpsResort(); render(); }
 function setBatchLine(i,v){ mps[i].line=v; render(); }
 function mpsExport(){
@@ -2346,7 +2389,8 @@ function renderMPS(){
       const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: planned ${hu(a.load)} / cap ${hu(wk?cap:0)}
 carry-in ${hu(a.carryIn)} → produced ${hu(a.prod)} → carry-over ${hu(a.carryOut)}
 ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+': '+hu(r.qty)).join('\n')}"`:'';
-      html+=`<td class="c"${tip} style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
+      const drag=a.load>0?` draggable="true"`:'';
+      html+=`<td class="c"${tip}${drag} data-line="${l.name}" data-day="${d}" style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};${a.load>0?'cursor:grab;':''}">${txt}</td>`;
     }
     gb.insertRow().innerHTML=html;
   });
