@@ -254,9 +254,10 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         </div>
         <div style="overflow-x:auto;max-height:420px;overflow-y:auto;"><table class="gt" id="mps-batch-table"></table></div>
         <div class="divider"></div>
-        <div style="display:grid;grid-template-columns:130px 90px 1fr 80px auto;gap:8px;align-items:center;">
+        <div style="display:grid;grid-template-columns:130px 80px 120px 1fr 76px auto;gap:8px;align-items:center;">
           <input type="date" id="mb-date" class="ni" style="color-scheme:dark;">
           <select id="mb-line" class="si"></select>
+          <input type="text" id="mb-job" class="ni" placeholder="Job no. (opt.)">
           <input type="text" id="mb-sku" class="ni" placeholder="SKU code" list="sku-datalist">
           <input type="number" id="mb-qty" class="numi" placeholder="qty" min="1">
           <button class="add-btn" style="margin-top:0;" onclick="addBatch()">+ Add</button>
@@ -1916,10 +1917,10 @@ function exportCSV(){
 
   else if(activeTab==='mps'){
     rows.push(['MPS BATCH PLAN']);
-    rows.push(['Date','Line','SKU','Product group','Qty']);
+    rows.push(['Date','Line','Job no','SKU','Product group','Qty']);
     mps.filter(r=>mkOfDate(r.date)===m).forEach(r=>{
       const s=skuOf(r.sku);
-      rows.push([r.date,r.line,r.sku,s&&s.pg?pg(s.pg).label:'',r.qty]);
+      rows.push([r.date,r.line,r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty]);
     });
   }
   else if(activeTab==='scenarios'){
@@ -2130,6 +2131,7 @@ function mpsShowMapping(){
     qty: guess([/qty|quant|menny|volume|amount|aantal|pcs|db|cases/i]),
     fam: guess([/family|group|categ/i]),
     desc:guess([/desc|omschr|megnev/i]),
+    job: guess([/job|batch.?no|order.?no|s[ée]ria|szeria/i]),
   };
   const sel=(id,gi,none)=>`<select id="mm-${id}" class="si" style="width:100%;">${none?`<option value="-1"${gi<0?' selected':''}>— none</option>`:''}${head.map((h,i)=>`<option value="${i}"${i===gi?' selected':''}>${h}</option>`).join('')}</select>`;
   document.getElementById('mps-map').innerHTML=`
@@ -2140,6 +2142,7 @@ function mpsShowMapping(){
       <div><div style="color:var(--text2);margin-bottom:3px;">Quantity column</div>${sel('qty',g.qty)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Product family (optional)</div>${sel('fam',g.fam,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Description (optional)</div>${sel('desc',g.desc,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Job / batch no. (optional)</div>${sel('job',g.job,true)}</div>
     </div>
     <button class="add-btn" onclick="mpsParse()">→ Parse rows</button>
   `;
@@ -2164,13 +2167,15 @@ function mpsConvert(ci){
       if(ci.fam>=0&&r[ci.fam]) info.fam=String(r[ci.fam]).trim();
       if(ci.desc>=0&&r[ci.desc]) info.name=String(r[ci.desc]).trim();
     }
-    out.push({date,line,sku:skuC,qty});
+    // job/batch number: numbers are read at full precision (the 1E+07 look is just Excel display formatting)
+    const job=ci.job>=0?String(r[ci.job]??'').trim():'';
+    out.push({date,line,sku:skuC,qty,job});
   });
   return {out, errs, unknown, skuInfo};
 }
 function mpsParse(){
   const col=id=>+document.getElementById('mm-'+id).value;
-  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc')};
+  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job')};
   const res=mpsConvert(mpsCtx);
   const el=document.getElementById('mps-preview');
   mpsUnknown=Object.keys(res.unknown);
@@ -2239,8 +2244,10 @@ function addBatch(){
   const skuC=document.getElementById('mb-sku').value.trim();
   const qty=+document.getElementById('mb-qty').value||0;
   if(!date||!line||!skuC||qty<=0) return;
+  const job=document.getElementById('mb-job').value.trim();
   if(!skuOf(skuC)) skus.push({code:skuC,pg:null,name:''});
-  mps.push({date,line,sku:skuC,qty});
+  mps.push({date,line,sku:skuC,qty,job});
+  document.getElementById('mb-job').value='';
   mps.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.line.localeCompare(b.line));
   document.getElementById('mb-sku').value=''; document.getElementById('mb-qty').value='';
   render();
@@ -2296,11 +2303,11 @@ function mpsExport(){
   const m=mk(curDate);
   const rows=mps.filter(r=>mkOfDate(r.date)===m).map(r=>{
     const s=skuOf(r.sku);
-    return {Date:r.date, Line:r.line, SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty};
+    return {Date:r.date, Line:r.line, 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty};
   });
   if(!rows.length){ alert('No batches in the selected month to export.'); return; }
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:8},{wch:16},{wch:36},{wch:14},{wch:10}];
+  ws['!cols']=[{wch:12},{wch:8},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'MPS');
   XLSX.writeFile(wb,`linesight_mps_${curDate.getFullYear()}-${String(curDate.getMonth()+1).padStart(2,'0')}.xlsx`);
@@ -2384,7 +2391,7 @@ function renderMPS(){
       } else if(!wk) bg='rgba(255,255,255,0.02)';
       const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: planned ${hu(a.load)} / cap ${hu(wk?cap:0)}
 carry-in ${hu(a.carryIn)} → produced ${hu(a.prod)} → carry-over ${hu(a.carryOut)}
-${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+': '+hu(r.qty)).join('\n')}"`:'';
+${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(r.job?' ['+r.job+']':'')+': '+hu(r.qty)).join('\n')}"`:'';
       const drag=a.load>0?` draggable="true"`:'';
       html+=`<td class="c"${tip}${drag} data-line="${l.name}" data-day="${d}" style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};${a.load>0?'cursor:grab;':''}">${txt}</td>`;
     }
@@ -2408,7 +2415,7 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+'
     (mpsFltLine||mpsFltPg||mpsFltDate)?`${shown.length} / ${monthRows.length} batches · ${hu(shown.reduce((s,r)=>s+r.qty,0))} units`:`${monthRows.length} batches`;
   const bt=document.getElementById('mps-batch-table'); bt.innerHTML='';
   const bh=bt.createTHead().insertRow();
-  ['Date','Line','SKU','Group','Qty',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=i>=4?'c':''; bh.appendChild(th);});
+  ['Date','Line','Job no.','SKU','Group','Qty',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=i>=5?'c':''; bh.appendChild(th);});
   const bb=bt.createTBody();
   shown.forEach(r=>{
     const gi=mps.indexOf(r);
@@ -2416,13 +2423,14 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+'
     bb.insertRow().innerHTML=`
       <td style="width:126px;"><input type="date" class="wni" style="width:118px;font-size:10px;text-align:left;padding:3px 5px;color-scheme:dark;" value="${r.date}" onchange="setBatchDate(${gi},this.value)"></td>
       <td style="width:76px;"><select class="si" style="width:68px;" onchange="setBatchLine(${gi},this.value)">${lines.map(l2=>`<option value="${l2.name}"${l2.name===r.line?' selected':''}>${l2.name}</option>`).join('')}</select></td>
+      <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.job||'—'}</td>
       <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
       <td>${grp?`<span class="pg-dot" style="background:${grp.color};"></span><span style="font-size:10px;">${grp.label}</span>`:'<span style="font-size:10px;color:var(--yellow);">—</span>'}</td>
       <td class="c" style="width:70px;"><input class="wni" type="number" style="width:60px;" value="${r.qty}" min="1" oninput="mps[${gi}].qty=+this.value||0;render()"></td>
       <td class="c"><button class="del-btn" onclick="delBatch(${gi})">✕</button></td>
     `;
   });
-  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="6" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
+  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="7" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
 
   // ── Add-batch form + SKU master ──
   const mbLine=document.getElementById('mb-line');
