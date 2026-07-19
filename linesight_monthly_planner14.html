@@ -2385,7 +2385,8 @@ function renderMPS(){
       let bg='transparent', col='var(--text2)', txt='';
       if(a.load>0){
         const list=(cellB[l.name]||{})[d]||[];
-        txt=list.map(({gi,r})=>`<div class="mps-chip" draggable="true" data-gi="${gi}" title="${r.sku}${r.job?' ['+r.job+']':''}: ${hu(r.qty)}">${k1(r.qty)}</div>`).join('');
+        txt=list.map(({gi,r})=>`<div class="mps-chip" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.job?`
+Job no: ${r.job}`:''}">${k1(r.qty)}</div>`).join('');
         if(!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
         else if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else if(a.carryIn>0||a.carryOut>0){ bg='rgba(55,138,221,0.2)'; col='var(--blue-l)'; }
