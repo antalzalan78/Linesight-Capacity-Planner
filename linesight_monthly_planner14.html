@@ -243,8 +243,22 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 <div class="view-panel" id="panel-mps">
   <div class="metrics-strip" id="mps-strip" style="margin-bottom:1.25rem;"></div>
   <div class="card">
-    <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
-        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong></p>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:.5rem;">
+      <div class="section-label" style="margin-bottom:0;">Daily load vs. capacity — <span id="mps-month-label"></span></div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2);">
+        <span>Capacity basis</span>
+        <select id="mps-basis" class="si" style="width:150px;" onchange="mpsBasis=this.value;render()">
+          <option value="units">Units / day</option>
+          <option value="min">Std. minutes / day</option>
+        </select>
+        <span id="mps-setup-wrap" style="display:none;align-items:center;gap:4px;">
+          <span title="Default changeover minutes added per batch when it has no setup time of its own">default setup</span>
+          <input id="mps-setup" class="numi" type="number" min="0" style="width:52px;font-size:11px;" oninput="mpsSetupDef=+this.value||0;render()">
+          <span>min</span>
+        </span>
+      </div>
+    </div>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time (more accurate for a mixed day). <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong></p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
     <div id="mps-tray" style="margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;">
       <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
@@ -651,6 +665,8 @@ let scenarios  = [];   // [{name, ts, state}] — full plan snapshots for compar
 let skus       = [];   // [{code, pg, name}] — SKU master; pg null = unassigned
 let mps        = [];   // [{date:'YYYY-MM-DD', line, sku, qty}] — daily batch plan
 let lineAlias  = {};   // ['CFC-L3'] = 'Line3' — remembered import line-name mappings
+let mpsBasis   = 'units'; // 'units' | 'min' — MPS daily-load capacity basis
+let mpsSetupDef= 0;       // default changeover minutes per batch (used in std-minutes basis)
 let demandMode = 'pg'; // 'pg' | 'rate'
 let curDate    = new Date(); curDate.setDate(1);
 let charts     = {};
@@ -2143,6 +2159,8 @@ function mpsShowMapping(){
     fam: guess([/family|group|categ/i]),
     desc:guess([/desc|omschr|megnev/i]),
     job: guess([/job|batch.?no|order.?no|s[ée]ria|szeria/i]),
+    std: guess([/std.?min|standard.?min|min.?per.?unit|min.?unit/i]),
+    setup:guess([/setup|set.?up|change.?over|omst/i]),
   };
   const sel=(id,gi,none)=>`<select id="mm-${id}" class="si" style="width:100%;">${none?`<option value="-1"${gi<0?' selected':''}>— none</option>`:''}${head.map((h,i)=>`<option value="${i}"${i===gi?' selected':''}>${h}</option>`).join('')}</select>`;
   document.getElementById('mps-map').innerHTML=`
@@ -2154,6 +2172,8 @@ function mpsShowMapping(){
       <div><div style="color:var(--text2);margin-bottom:3px;">Product family (optional)</div>${sel('fam',g.fam,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Description (optional)</div>${sel('desc',g.desc,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Job / batch no. (optional)</div>${sel('job',g.job,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Std. min / unit (optional)</div>${sel('std',g.std,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Setup min (optional)</div>${sel('setup',g.setup,true)}</div>
     </div>
     <button class="add-btn" onclick="mpsParse()">→ Parse rows</button>
   `;
@@ -2173,20 +2193,24 @@ function mpsConvert(ci){
     if(!line){ if(rawLine) unknown[rawLine]=(unknown[rawLine]||0)+1; errs.push(`Row ${ri+2}: unknown line "${rawLine}"`); return; }
     if(!skuC){ errs.push(`Row ${ri+2}: empty SKU`); return; }
     if(qty<=0){ errs.push(`Row ${ri+2}: bad qty "${r[ci.qty]}"`); return; }
-    if(ci.fam>=0||ci.desc>=0){
+    if(ci.fam>=0||ci.desc>=0||ci.std>=0){
       const info=skuInfo[skuC]||(skuInfo[skuC]={});
       if(ci.fam>=0&&r[ci.fam]) info.fam=String(r[ci.fam]).trim();
       if(ci.desc>=0&&r[ci.desc]) info.name=String(r[ci.desc]).trim();
+      if(ci.std>=0){ const v=parseFloat(String(r[ci.std]).replace(',','.')); if(v>0) info.stdMin=v; }
     }
     // job/batch number: numbers are read at full precision (the 1E+07 look is just Excel display formatting)
     const job=ci.job>=0?String(r[ci.job]??'').trim():'';
-    out.push({date,line,sku:skuC,qty,job});
+    const setup=ci.setup>=0?(parseFloat(String(r[ci.setup]).replace(',','.'))||0):0;
+    const row={date,line,sku:skuC,qty,job};
+    if(setup>0) row.setup=setup;
+    out.push(row);
   });
   return {out, errs, unknown, skuInfo};
 }
 function mpsParse(){
   const col=id=>+document.getElementById('mm-'+id).value;
-  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job')};
+  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup')};
   const res=mpsConvert(mpsCtx);
   const el=document.getElementById('mps-preview');
   mpsUnknown=Object.keys(res.unknown);
@@ -2242,6 +2266,7 @@ function mpsApply(){
     if(!s){ s={code:c,pg:null,name:''}; skus.push(s); }
     if(info.name&&!s.name) s.name=info.name;
     if(!s.pg&&info.fam){ const k=pgFromFamily(info.fam); if(k) s.pg=k; }
+    if(info.stdMin>0) s.stdMin=info.stdMin;
   });
   [...new Set(res.out.map(o=>o.sku))].forEach(c=>{ if(!skuOf(c)) skus.push({code:c,pg:null,name:''}); });
   const n=res.out.length; mpsCtx=null; mpsRaw=null; mpsUnknown=[];
@@ -2330,11 +2355,11 @@ function mpsExport(){
   const m=mk(curDate);
   const rows=mps.filter(r=>mkOfDate(r.date)===m).map(r=>{
     const s=skuOf(r.sku);
-    return {Date:r.date, Line:r.line, 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty};
+    return {Date:r.date, Line:r.line, 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:''};
   });
   if(!rows.length){ alert('No batches in the selected month to export.'); return; }
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:8},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10}];
+  ws['!cols']=[{wch:12},{wch:8},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:12},{wch:10}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'MPS');
   XLSX.writeFile(wb,`linesight_mps_${curDate.getFullYear()}-${String(curDate.getMonth()+1).padStart(2,'0')}.xlsx`);
@@ -2350,12 +2375,24 @@ function renderMPS(){
   const totQty=monthRows.reduce((s,r)=>s+r.qty,0);
   const days=new Date(year,month+1,0).getDate();
   const base=Math.round(p.oee*100);
-  const dayCap=l=>Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*p.shifts);
+  // ── Capacity basis: units/day (flat rate) or std-minutes/day (per-SKU standard time + setup) ──
+  const minMode=mpsBasis==='min';
+  document.getElementById('mps-basis').value=mpsBasis;
+  document.getElementById('mps-setup-wrap').style.display=minMode?'inline-flex':'none';
+  const setupInp=document.getElementById('mps-setup');
+  if(document.activeElement!==setupInp) setupInp.value=mpsSetupDef||'';
+  // standard minutes per unit for a SKU; falls back to the line's flat rate (60 / cap u/h)
+  const stdMinOf=(sku,line)=>{ const s=skuOf(sku); if(s&&s.stdMin>0) return s.stdMin; const l=lines.find(x=>x.name===line); return l&&l.cap>0?60/l.cap:0; };
+  const setupOf=r=>(r.setup>0?r.setup:mpsSetupDef)||0;
+  const batchLoad=r=>minMode?(r.qty*stdMinOf(r.sku,r.line)+setupOf(r)):r.qty;
+  const dayCap=l=>minMode?Math.round(p.shifts*p.shiftlen*60*((l.oee??base)/100))
+                         :Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*p.shifts);
+  const fV=minMode?(v=>(Math.round(v/60*10)/10).toLocaleString('en-GB')+' h'):(v=>hu(v)); // basis-aware formatter (hours vs units)
   const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
   const cell={}, cellB={};
   monthRows.forEach(r=>{
     const d=+r.date.split('-')[2];
-    (cell[r.line]??={})[d]=(cell[r.line][d]||0)+r.qty;
+    (cell[r.line]??={})[d]=(cell[r.line][d]||0)+batchLoad(r);
     ((cellB[r.line]??={})[d]??=[]).push({gi:mps.indexOf(r), r});
   });
   // Spill-over model: a batch is booked on its start day and keeps producing on the
@@ -2419,13 +2456,13 @@ Job no: ${r.job}`:''}">${hu(r.qty)}</div>`).join('');
         else if(a.carryIn>0||a.carryOut>0){ bg='rgba(55,138,221,0.2)'; col='var(--blue-l)'; }
         else { bg='rgba(29,158,117,0.18)'; col='var(--green-l)'; }
       } else if(a.carryIn>0&&wk){
-        txt='↳'+hu(a.prod);
+        txt='↳'+fV(a.prod);
         if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else { bg='rgba(55,138,221,0.12)'; col='var(--blue-l)'; }
       } else if(!wk) bg='rgba(255,255,255,0.02)';
-      const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: planned ${hu(a.load)} / cap ${hu(wk?cap:0)}
-carry-in ${hu(a.carryIn)} → produced ${hu(a.prod)} → carry-over ${hu(a.carryOut)}
-${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(r.job?' ['+r.job+']':'')+': '+hu(r.qty)).join('\n')}"`:'';
+      const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: load ${fV(a.load)} / cap ${fV(wk?cap:0)}${minMode?' (std minutes)':' (units)'}
+carry-in ${fV(a.carryIn)} → produced ${fV(a.prod)} → carry-over ${fV(a.carryOut)}
+${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(r.job?' ['+r.job+']':'')+': '+hu(r.qty)+' u').join('\n')}"`:'';
       html+=`<td class="c"${tip} data-line="${l.name}" data-day="${d}" style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
     }
     gb.insertRow().innerHTML=html;
@@ -2486,6 +2523,7 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
     return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:.5px solid var(--border);">
       <span style="font-size:11px;flex:1;${!s.pg?'color:var(--yellow);':''}" title="${(s.name||'').replace(/"/g,'&quot;')}"><span style="font-family:var(--mono);">${s.code}</span>${s.name?` <span style="color:var(--text2);font-size:9px;">${s.name.slice(0,28)}${s.name.length>28?'…':''}</span>`:''}</span>
       <span style="font-family:var(--mono);font-size:10px;color:var(--text2);" title="batches using this SKU">${cnt}×</span>
+      <input class="numi" type="number" step="0.001" min="0" style="width:56px;font-size:10px;" value="${s.stdMin??''}" placeholder="std min" title="Standard minutes per unit (used in the std-minutes capacity basis)" oninput="skus[${i}].stdMin=this.value===''?undefined:+this.value;render()">
       <select class="si" style="width:120px;" onchange="skus[${i}].pg=this.value||null;render()">${opts}</select>
       ${cnt===0?`<button class="del-btn" title="Delete unused SKU" onclick="skus.splice(${i},1);render()">✕</button>`:'<span style="width:25px;"></span>'}
     </div>`;
@@ -2796,7 +2834,7 @@ function applySyncSettings(){
 function save(){
   try{
     localStorage.setItem('ls_planner', JSON.stringify({
-      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, rcDeadline, scenarios,
+      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, mpsBasis, mpsSetupDef, rcDeadline, scenarios,
       curDate: curDate.toISOString(),
       sliders: {
         shifts: document.getElementById('shifts').value,
@@ -2819,7 +2857,7 @@ function resetData(){
     {name:'Line2',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
     {name:'Line3',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
   ];
-  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; skus=[]; mps=[]; lineAlias={}; rcDeadline=null; scenarios=[]; demandMode='pg';
+  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; skus=[]; mps=[]; lineAlias={}; mpsBasis='units'; mpsSetupDef=0; rcDeadline=null; scenarios=[]; demandMode='pg';
   curDate=new Date(); curDate.setDate(1);
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     const defaults={shifts:'2',shiftlen:'8',oee:'72',days:'5'};
@@ -2849,6 +2887,8 @@ function load(){
     if(d.skus)       skus=d.skus;
     if(d.mps)        mps=d.mps;
     if(d.lineAlias)  lineAlias=d.lineAlias;
+    if(d.mpsBasis)   mpsBasis=d.mpsBasis;
+    if(d.mpsSetupDef!==undefined) mpsSetupDef=d.mpsSetupDef;
     if(d.rcDeadline) rcDeadline=d.rcDeadline;
     if(d.scenarios)  scenarios=d.scenarios;
     if(d.demandMode) demandMode=d.demandMode;
