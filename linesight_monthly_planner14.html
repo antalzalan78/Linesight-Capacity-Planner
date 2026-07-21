@@ -400,6 +400,10 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
             <span><strong>Product group demand</strong><br><span style="color:var(--text2);font-size:11px;">Calculated from the monthly values entered above</span></span>
           </label>
           <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;">
+            <input type="radio" name="demMode" value="mps" onchange="demandMode=this.value;render()" style="margin-top:2px;">
+            <span><strong>MPS batch plan</strong><br><span style="color:var(--text2);font-size:11px;">Demand aggregated from the actual batch plan, per product group per month (edit on the MPS tab)</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;">
             <input type="radio" name="demMode" value="rate" onchange="demandMode=this.value;render()" style="margin-top:2px;">
             <span><strong>Line-level rate (u/h)</strong><br><span style="color:var(--text2);font-size:11px;">Demand calculated from each line's u/h rate</span></span>
           </label>
@@ -697,6 +701,10 @@ function getOvr(m,wi,f,def){ return (weekOvr[m]?.[wi]?.[f]!==undefined)?weekOvr[
 function setOvr(m,wi,f,v){ if(!weekOvr[m])weekOvr[m]={}; if(!weekOvr[m][wi])weekOvr[m][wi]={}; weekOvr[m][wi][f]=v; }
 function getPGD(m,k){ return pgDemand[m]?.[k]||0; }
 function setPGD(m,k,v){ if(!pgDemand[m])pgDemand[m]={}; pgDemand[m][k]=v; }
+// Monthly demand for a product group from the batch plan (sum of that PG's batch quantities in the month)
+function mpsPGDem(m,k){ return mps.reduce((s,r)=>{ const sk=skuOf(r.sku); return s+((sk&&sk.pg===k&&mkOfDate(r.date)===m)?r.qty:0); },0); }
+// Effective monthly PG demand from the active source: manual entry, or the MPS batch plan
+function pgDem(m,k){ return demandMode==='mps'?mpsPGDem(m,k):getPGD(m,k); }
 function getBLO(m,k){ const o=blOpen[m]; return (o&&typeof o==='object')?(o[k]||0):0; }
 function setBLO(m,k,v){ if(!blOpen[m]||typeof blOpen[m]!=='object')blOpen[m]={}; blOpen[m][k]=Math.max(0,v); }
 function totBLOpen(m){ return PGS.reduce((s,g)=>s+getBLO(m,g.key),0); }
@@ -799,9 +807,9 @@ function lWkDem(line,week,m,wi,weeks){
     const demF=getOvr(m,wi,'demFactor',100)/100;
     return Math.round(line.demand*p.shiftlen*p.shifts*days*demF);
   }
-  // pg mode: distribute PG monthly demand to this line by cap share, then weekly by week cap share
+  // pg / mps mode: distribute PG monthly demand to this line by cap share, then weekly by week cap share
   const pgKey=line.pg;
-  const monthDem=getPGD(m,pgKey);
+  const monthDem=pgDem(m,pgKey);
   if(monthDem===0) return 0;
   // all lines in same PG
   const pgLines=lines.filter(l=>l.pg===pgKey);
@@ -1553,15 +1561,16 @@ function renderDemandView(){
 
   // input grid
   const grid=document.getElementById('pg-demand-grid'); grid.innerHTML='';
+  const fromMps=demandMode==='mps';
   let grand=0;
   PGS.forEach(g=>{
-    const val=getPGD(m,g.key); grand+=val;
+    const val=pgDem(m,g.key); grand+=val;
     const pgCap=lines.filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,weeks,m),0);
     const ut=pct(val,pgCap);
     const row=document.createElement('div'); row.className='pg-demand-row';
     row.innerHTML=`
       <div class="pg-name"><span class="pg-dot" style="background:${g.color};"></span>${g.label}</div>
-      <input class="numi" type="number" value="${val}" min="0" max="99999999"
+      <input class="numi" type="number" value="${val}" min="0" max="99999999"${fromMps?' disabled title="From the batch plan (MPS demand source) — edit batches on the MPS tab"':''}
         oninput="setPGD('${m}','${g.key}',+this.value);render()">
       <div class="pg-stat" style="color:${pgCap>0?tCol(ut):'var(--text2)'};">
         ${pgCap>0?ut+'% cap.':lines.filter(l=>l.pg===g.key).length===0?'no line':'0 cap.'}
@@ -1569,7 +1578,7 @@ function renderDemandView(){
     `;
     grid.appendChild(row);
   });
-  document.getElementById('pg-total').textContent=hu(grand)+' units';
+  document.getElementById('pg-total').textContent=hu(grand)+' units'+(fromMps?' · from MPS':'');
 
   // summary table
   const tbl=document.getElementById('pg-summary-table'); tbl.innerHTML='';
@@ -1582,7 +1591,7 @@ function renderDemandView(){
   PGS.forEach(g=>{
     const pgL=lines.filter(l=>l.pg===g.key);
     const cap=pgL.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
-    const dem=getPGD(m,g.key);
+    const dem=pgDem(m,g.key);
     const ut=pct(dem,cap), sl=cap-dem;
     tC+=cap; tD+=dem;
     const tr=body.insertRow();
@@ -1607,7 +1616,7 @@ function renderDemandView(){
 
   // doughnut chart
   destroyChart('pgChart');
-  const dems=PGS.map(g=>getPGD(m,g.key));
+  const dems=PGS.map(g=>pgDem(m,g.key));
   if(dems.reduce((s,v)=>s+v,0)>0){
     charts['pgChart']=new Chart(document.getElementById('pgChart').getContext('2d'),{
       type:'doughnut',
@@ -1762,7 +1771,7 @@ async function runAI(){
   // PG demand
   summary+=`\nPRODUCT GROUP DEMAND (${MN[month]}):\n`;
   PGS.forEach(g=>{
-    const d=getPGD(m,g.key);
+    const d=pgDem(m,g.key);
     if(d>0) summary+=`  ${g.label}: ${d.toLocaleString()} units\n`;
   });
 
@@ -1880,7 +1889,7 @@ function exportCSV(){
     PGS.forEach(g=>{
       const pgL=lines.filter(l=>l.pg===g.key);
       const cap=pgL.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
-      const dem=getPGD(m,g.key);
+      const dem=pgDem(m,g.key);
       tC+=cap; tD+=dem;
       rows.push([g.label,pgL.map(l=>l.name).join(', ')||'—',cap,dem,pct(dem,cap),cap-dem]);
     });
@@ -2670,7 +2679,7 @@ function buildReport(){
   PGS.forEach(g=>{
     const pgL=lines.filter(l=>l.pg===g.key);
     const cap=pgL.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
-    const dem=getPGD(m,g.key);
+    const dem=pgDem(m,g.key);
     if(cap||dem) pgRows+=`<tr><td>${g.label}</td><td class="r">${hu(cap)}</td><td class="r">${hu(dem)}</td><td class="r">${cap?pct(dem,cap)+'%':'—'}</td></tr>`;
   });
 
@@ -2690,7 +2699,7 @@ function buildReport(){
   document.getElementById('report-view').innerHTML=`
     <h1>LineSight — Monthly Capacity Report</h1>
     <div class="rep-sub">${MN[month]} ${year} · generated ${new Date().toLocaleDateString('en-GB')} ·
-      ${p.shifts} shifts × ${p.shiftlen} h · base OEE ${base}% · ${fmtD(p.days)} days/week · demand mode: ${demandMode==='pg'?'product group':'line rate'}</div>
+      ${p.shifts} shifts × ${p.shiftlen} h · base OEE ${base}% · ${fmtD(p.days)} days/week · demand mode: ${demandMode==='pg'?'product group':demandMode==='mps'?'MPS batch plan':'line rate'}</div>
     <div class="kpis">
       <div class="kpi"><div class="l">Capacity</div><div class="v">${hu(M.cap)}</div></div>
       <div class="kpi"><div class="l">Demand</div><div class="v">${hu(M.dem)}</div></div>
@@ -2915,8 +2924,9 @@ function load(){
       document.getElementById('oee-out').textContent=d.sliders.oee+'%';
       document.getElementById('days-out').textContent=fmtD(+d.sliders.days);
     }
-    if(d.demandMode==='rate'){
-      document.querySelector('input[name="demMode"][value="rate"]').checked=true;
+    if(d.demandMode){
+      const rb=document.querySelector(`input[name="demMode"][value="${d.demandMode}"]`);
+      if(rb) rb.checked=true;
     }
   }catch(e){}
 }
