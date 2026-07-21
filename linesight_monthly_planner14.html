@@ -64,7 +64,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #hc-weekly-table{table-layout:fixed;font-size:11px;}
 #hc-weekly-table td, #hc-weekly-table th{padding:4px 4px;overflow:hidden;}
 #lines-table td, #lines-table th{padding:4px 3px;}
-.mps-chip{cursor:grab;border-radius:3px;padding:0 2px;margin:1px auto;background:rgba(255,255,255,0.07);max-width:26px;}
+.mps-chip{cursor:grab;border-radius:3px;padding:0 3px;margin:1px auto;background:rgba(255,255,255,0.07);white-space:nowrap;}
 .mps-chip:active{cursor:grabbing;}
 .mps-tray-chip{display:inline-flex;align-items:center;gap:5px;cursor:grab;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--bg3);border:.5px solid var(--border);border-radius:5px;padding:3px 6px;}
 .mps-tray-chip:active{cursor:grabbing;}
@@ -244,7 +244,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   <div class="metrics-strip" id="mps-strip" style="margin-bottom:1.25rem;"></div>
   <div class="card">
     <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
-        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong></p>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong></p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
     <div id="mps-tray" style="margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;">
       <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
@@ -2403,7 +2403,6 @@ function renderMPS(){
     hr.appendChild(th);
   }
   const gb=g.createTBody();
-  const k1=v=>Math.round(v/1000)||'<1';
   lines.forEach(l=>{
     const cap=dayCap(l);
     let html=`<td style="font-family:var(--mono);font-size:10px;">${l.name}</td>`;
@@ -2414,13 +2413,13 @@ function renderMPS(){
       if(a.load>0){
         const list=(cellB[l.name]||{})[d]||[];
         txt=list.map(({gi,r})=>`<div class="mps-chip" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.job?`
-Job no: ${r.job}`:''}">${k1(r.qty)}</div>`).join('');
+Job no: ${r.job}`:''}">${hu(r.qty)}</div>`).join('');
         if(!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
         else if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else if(a.carryIn>0||a.carryOut>0){ bg='rgba(55,138,221,0.2)'; col='var(--blue-l)'; }
         else { bg='rgba(29,158,117,0.18)'; col='var(--green-l)'; }
       } else if(a.carryIn>0&&wk){
-        txt='↳'+k1(a.prod);
+        txt='↳'+hu(a.prod);
         if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else { bg='rgba(55,138,221,0.12)'; col='var(--blue-l)'; }
       } else if(!wk) bg='rgba(255,255,255,0.02)';
