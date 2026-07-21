@@ -66,6 +66,11 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #lines-table td, #lines-table th{padding:4px 3px;}
 .mps-chip{cursor:grab;border-radius:3px;padding:0 2px;margin:1px auto;background:rgba(255,255,255,0.07);max-width:26px;}
 .mps-chip:active{cursor:grabbing;}
+.mps-tray-chip{display:inline-flex;align-items:center;gap:5px;cursor:grab;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--bg3);border:.5px solid var(--border);border-radius:5px;padding:3px 6px;}
+.mps-tray-chip:active{cursor:grabbing;}
+.mps-tray-chip .tc-x{border:none;background:none;color:var(--text2);cursor:pointer;font-size:11px;padding:0 0 0 2px;line-height:1;}
+.mps-tray-chip .tc-x:hover{color:var(--red);}
+#mps-tray.tray-over{background:rgba(29,158,117,0.1);border-color:var(--green);}
 #lines-table .ni, #lines-table .numi{font-size:12px;padding:4px 4px;}
 #lines-table .si{font-size:10px;padding:4px 3px;}
 .gt th{font-family:var(--mono);font-size:10px;color:var(--text2);font-weight:400;padding:0 5px 8px;text-align:left;border-bottom:.5px solid var(--border);}
@@ -239,8 +244,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   <div class="metrics-strip" id="mps-strip" style="margin-bottom:1.25rem;"></div>
   <div class="card">
     <div class="section-label">Daily load vs. capacity — <span id="mps-month-label"></span></div>
-        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule that single batch.</strong></p>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Values in ×1000 units; hover a cell for the carry-over details. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong></p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
+    <div id="mps-tray" style="margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
+      <div id="mps-tray-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    </div>
       </div>
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
@@ -2256,25 +2265,33 @@ function addBatch(){
 }
 function delBatch(i){ mps.splice(i,1); render(); }
 function mpsResort(){ mps.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.line.localeCompare(b.line)); }
-// Move ONE batch (by its mps index) to tgtLine/tgtDay (drag & drop on the grid)
+// Schedule ONE batch (by its mps index) to tgtLine/tgtDay; also clears un-allocated state
 function moveBatch(gi,tl,td2){
   const r=mps[gi]; if(!r) return;
   const y=curDate.getFullYear(), mo=String(curDate.getMonth()+1).padStart(2,'0');
   const tDate=`${y}-${mo}-${String(td2).padStart(2,'0')}`;
-  if(r.line===tl&&r.date===tDate) return;
-  r.line=tl; r.date=tDate;
+  if(r.line===tl&&r.date===tDate&&!r.unalloc) return;
+  r.line=tl; r.date=tDate; delete r.unalloc;
   mpsResort(); render();
 }
-// Grid drag & drop (delegated once — the table element survives re-renders)
+// Park ONE batch into the un-allocated tray (keeps its date for the month it belongs to)
+function parkBatch(gi){
+  const r=mps[gi]; if(!r||r.unalloc) return;
+  r.unalloc=true; render();
+}
+// Grid + tray drag & drop (delegated once on elements that survive re-renders)
 (function(){
   const grid=document.getElementById('mps-grid');
+  const tray=document.getElementById('mps-tray');
   let src=null;
-  grid.addEventListener('dragstart',e=>{
-    const chip=e.target.closest('.mps-chip[draggable="true"]');
+  const start=e=>{
+    const chip=e.target.closest('.mps-chip[draggable="true"], .mps-tray-chip[draggable="true"]');
     if(!chip){ e.preventDefault(); return; }
     src={gi:+chip.dataset.gi};
     if(e.dataTransfer){ e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain',''); }catch(_){} }
-  });
+  };
+  grid.addEventListener('dragstart',start);
+  tray.addEventListener('dragstart',start);
   grid.addEventListener('dragover',e=>{
     const td=e.target.closest('td[data-day]');
     if(!td||!src) return;
@@ -2296,7 +2313,16 @@ function moveBatch(gi,tl,td2){
     moveBatch(src.gi,td.dataset.line,+td.dataset.day);
     src=null;
   });
+  tray.addEventListener('dragover',e=>{ if(src){ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='move'; } });
+  tray.addEventListener('dragenter',e=>{ if(src){ e.preventDefault(); tray.classList.add('tray-over'); } });
+  tray.addEventListener('dragleave',e=>{ if(!tray.contains(e.relatedTarget)) tray.classList.remove('tray-over'); });
+  tray.addEventListener('drop',e=>{
+    if(!src) return;
+    e.preventDefault(); tray.classList.remove('tray-over');
+    parkBatch(src.gi); src=null;
+  });
   grid.addEventListener('dragend',()=>{ src=null; });
+  tray.addEventListener('dragend',()=>{ src=null; tray.classList.remove('tray-over'); });
 })();
 function setBatchDate(i,v){ if(v) mps[i].date=v; mpsResort(); render(); }
 function setBatchLine(i,v){ mps[i].line=v; render(); }
@@ -2319,7 +2345,8 @@ function renderMPS(){
   document.getElementById('mps-month-label').textContent=label;
   document.getElementById('mps-batch-month').textContent=label;
   seedYear(year);
-  const monthRows=mps.filter(r=>mkOfDate(r.date)===m);
+  const monthRows=mps.filter(r=>!r.unalloc&&mkOfDate(r.date)===m); // allocated (on grid)
+  const parkRows =mps.filter(r=>r.unalloc&&mkOfDate(r.date)===m);  // un-allocated (in tray)
   const totQty=monthRows.reduce((s,r)=>s+r.qty,0);
   const days=new Date(year,month+1,0).getDate();
   const base=Math.round(p.oee*100);
@@ -2363,6 +2390,7 @@ function renderMPS(){
     <div class="metric"><div class="metric-label">Overloaded line-days</div><div class="metric-val ${overDays?'danger':'ok'}">${overDays}</div><div class="metric-sub">spill-over cannot absorb</div></div>
     <div class="metric"><div class="metric-label">Off-day batches</div><div class="metric-val ${offDays?'warn':'ok'}">${offDays}</div><div class="metric-sub">on weekend / holiday</div></div>
     <div class="metric"><div class="metric-label">Unassigned SKUs</div><div class="metric-val ${unSkus?'warn':'ok'}">${unSkus}</div><div class="metric-sub">no product group</div></div>
+    <div class="metric"><div class="metric-label">Un-allocated</div><div class="metric-val ${parkRows.length?'warn':'ok'}">${parkRows.length}</div><div class="metric-sub">${parkRows.length?hu(parkRows.reduce((s,r)=>s+r.qty,0))+' units parked':'all scheduled'}</div></div>
   `;
 
   // ── Daily line×day grid ──
@@ -2403,6 +2431,14 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(
     }
     gb.insertRow().innerHTML=html;
   });
+
+  // ── Un-allocated tray ──
+  const tray=document.getElementById('mps-tray-list');
+  tray.innerHTML=parkRows.length?parkRows.map(r=>{
+    const gi=mps.indexOf(r), s=skuOf(r.sku), c=s&&s.pg?pg(s.pg).color:'var(--text2)';
+    return `<div class="mps-tray-chip" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.job?`
+Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;height:7px;margin:0;"></span>${r.sku} · ${hu(r.qty)}<button class="tc-x" title="Delete batch" onclick="delBatch(${gi})">✕</button></div>`;
+  }).join(''):'<span style="font-size:11px;color:var(--text2);">No un-allocated batches — drag a batch chip from the grid to park it here.</span>';
 
   // ── Batch table (with line/date filters) ──
   const mfLine=document.getElementById('mf-line');
