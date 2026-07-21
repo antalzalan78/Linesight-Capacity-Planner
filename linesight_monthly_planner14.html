@@ -247,9 +247,10 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <div class="section-label" style="margin-bottom:0;">Daily load vs. capacity — <span id="mps-month-label"></span></div>
       <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2);">
         <span>Capacity basis</span>
-        <select id="mps-basis" class="si" style="width:150px;" onchange="mpsBasis=this.value;render()">
+        <select id="mps-basis" class="si" style="width:172px;" onchange="mpsBasis=this.value;render()">
           <option value="units">Units / day</option>
           <option value="min">Std. minutes / day</option>
+          <option value="runtime">Run time / batch (actual)</option>
         </select>
         <span id="mps-setup-wrap" style="display:none;align-items:center;gap:4px;">
           <span title="Default changeover minutes added per batch when it has no setup time of its own">default setup</span>
@@ -258,7 +259,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         </span>
       </div>
     </div>
-        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time (more accurate for a mixed day). <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong></p>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time, and <em>Run time/batch</em> uses each batch's actual run minutes (imported from HC_Total_Min / HC_Total_Hrs), the most reliable option when your sheet already carries it. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong></p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
     <div id="mps-tray" style="margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;">
       <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
@@ -2161,6 +2162,8 @@ function mpsShowMapping(){
     job: guess([/job|batch.?no|order.?no|s[ée]ria|szeria/i]),
     std: guess([/std.?min|standard.?min|min.?per.?unit|min.?unit/i]),
     setup:guess([/setup|set.?up|change.?over|omst/i]),
+    hcmin:guess([/hc.?total.?min|total.?run.?min|batch.?run.?min|runtime.?min/i]),
+    hchr: guess([/hc.?total.?hr|total.?hr|run.?time.?h|batch.?hr/i]),
   };
   const sel=(id,gi,none)=>`<select id="mm-${id}" class="si" style="width:100%;">${none?`<option value="-1"${gi<0?' selected':''}>— none</option>`:''}${head.map((h,i)=>`<option value="${i}"${i===gi?' selected':''}>${h}</option>`).join('')}</select>`;
   document.getElementById('mps-map').innerHTML=`
@@ -2174,6 +2177,8 @@ function mpsShowMapping(){
       <div><div style="color:var(--text2);margin-bottom:3px;">Job / batch no. (optional)</div>${sel('job',g.job,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Std. min / unit (optional)</div>${sel('std',g.std,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Setup min (optional)</div>${sel('setup',g.setup,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Batch run time, min (optional)</div>${sel('hcmin',g.hcmin,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Batch run time, hrs (optional)</div>${sel('hchr',g.hchr,true)}</div>
     </div>
     <button class="add-btn" onclick="mpsParse()">→ Parse rows</button>
   `;
@@ -2202,15 +2207,20 @@ function mpsConvert(ci){
     // job/batch number: numbers are read at full precision (the 1E+07 look is just Excel display formatting)
     const job=ci.job>=0?String(r[ci.job]??'').trim():'';
     const setup=ci.setup>=0?(parseFloat(String(r[ci.setup]).replace(',','.'))||0):0;
+    // actual batch run time in minutes: prefer the minutes column, else convert the hours column
+    let runMin=0;
+    if(ci.hcmin>=0) runMin=parseFloat(String(r[ci.hcmin]).replace(',','.'))||0;
+    if(!runMin&&ci.hchr>=0) runMin=(parseFloat(String(r[ci.hchr]).replace(',','.'))||0)*60;
     const row={date,line,sku:skuC,qty,job};
     if(setup>0) row.setup=setup;
+    if(runMin>0) row.runMin=Math.round(runMin*100)/100;
     out.push(row);
   });
   return {out, errs, unknown, skuInfo};
 }
 function mpsParse(){
   const col=id=>+document.getElementById('mm-'+id).value;
-  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup')};
+  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup'),hcmin:col('hcmin'),hchr:col('hchr')};
   const res=mpsConvert(mpsCtx);
   const el=document.getElementById('mps-preview');
   mpsUnknown=Object.keys(res.unknown);
@@ -2355,11 +2365,11 @@ function mpsExport(){
   const m=mk(curDate);
   const rows=mps.filter(r=>mkOfDate(r.date)===m).map(r=>{
     const s=skuOf(r.sku);
-    return {Date:r.date, Line:r.line, 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:''};
+    return {Date:r.date, Line:r.line, 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
   });
   if(!rows.length){ alert('No batches in the selected month to export.'); return; }
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:8},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:12},{wch:10}];
+  ws['!cols']=[{wch:12},{wch:8},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:12},{wch:10},{wch:10}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'MPS');
   XLSX.writeFile(wb,`linesight_mps_${curDate.getFullYear()}-${String(curDate.getMonth()+1).padStart(2,'0')}.xlsx`);
@@ -2376,15 +2386,18 @@ function renderMPS(){
   const days=new Date(year,month+1,0).getDate();
   const base=Math.round(p.oee*100);
   // ── Capacity basis: units/day (flat rate) or std-minutes/day (per-SKU standard time + setup) ──
-  const minMode=mpsBasis==='min';
+  const minBasis=mpsBasis==='min', runBasis=mpsBasis==='runtime';
+  const minMode=minBasis||runBasis; // both are minutes-based (capacity + hours display)
   document.getElementById('mps-basis').value=mpsBasis;
-  document.getElementById('mps-setup-wrap').style.display=minMode?'inline-flex':'none';
+  document.getElementById('mps-setup-wrap').style.display=minBasis?'inline-flex':'none';
   const setupInp=document.getElementById('mps-setup');
   if(document.activeElement!==setupInp) setupInp.value=mpsSetupDef||'';
   // standard minutes per unit for a SKU; falls back to the line's flat rate (60 / cap u/h)
   const stdMinOf=(sku,line)=>{ const s=skuOf(sku); if(s&&s.stdMin>0) return s.stdMin; const l=lines.find(x=>x.name===line); return l&&l.cap>0?60/l.cap:0; };
   const setupOf=r=>(r.setup>0?r.setup:mpsSetupDef)||0;
-  const batchLoad=r=>minMode?(r.qty*stdMinOf(r.sku,r.line)+setupOf(r)):r.qty;
+  const stdLoad=r=>r.qty*stdMinOf(r.sku,r.line)+setupOf(r);
+  // runtime basis: use the batch's actual run minutes; fall back to the std-minutes estimate
+  const batchLoad=r=>runBasis?(r.runMin>0?r.runMin:stdLoad(r)):minBasis?stdLoad(r):r.qty;
   const dayCap=l=>minMode?Math.round(p.shifts*p.shiftlen*60*((l.oee??base)/100))
                          :Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*p.shifts);
   const fV=minMode?(v=>(Math.round(v/60*10)/10).toLocaleString('en-GB')+' h'):(v=>hu(v)); // basis-aware formatter (hours vs units)
@@ -2460,7 +2473,7 @@ Job no: ${r.job}`:''}">${hu(r.qty)}</div>`).join('');
         if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else { bg='rgba(55,138,221,0.12)'; col='var(--blue-l)'; }
       } else if(!wk) bg='rgba(255,255,255,0.02)';
-      const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: load ${fV(a.load)} / cap ${fV(wk?cap:0)}${minMode?' (std minutes)':' (units)'}
+      const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: load ${fV(a.load)} / cap ${fV(wk?cap:0)}${runBasis?' (actual run time)':minBasis?' (std minutes)':' (units)'}
 carry-in ${fV(a.carryIn)} → produced ${fV(a.prod)} → carry-over ${fV(a.carryOut)}
 ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(r.job?' ['+r.job+']':'')+': '+hu(r.qty)+' u').join('\n')}"`:'';
       html+=`<td class="c"${tip} data-line="${l.name}" data-day="${d}" style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
