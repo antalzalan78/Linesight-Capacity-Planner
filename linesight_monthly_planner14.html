@@ -201,7 +201,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
             <th style="width:70px;">Line</th>
             <th class="c" style="width:50px;">Cap.(u/h)</th>
             <th class="c" style="width:46px;" title="Line OEE %. Leave empty to use the base OEE slider. Weekly OEE overrides scale all lines proportionally.">OEE%</th>
-            <th class="c" style="width:54px;" title="Operators per shift">HC/shift</th>
+            <th class="c" style="width:92px;" title="Operators per shift (one box per active shift; the shifts/day slider sets how many)">HC/shift</th>
             <th class="c" style="width:50px;" title="Fixed daily staff">HC/day</th>
             <th style="min-width:84px;">Product group</th>
             <th style="width:22px;"></th>
@@ -481,7 +481,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <div class="card" style="margin-top:1.25rem;">
         <div class="section-label">Line detail — <span id="hc-month-label"></span></div>
         <p class="info-text">
-          <strong>HC/shift</strong> = rotating operators (multiplied by shifts/day).<br>
+          <strong>HC/shift</strong> = rotating operators per shift (set per active shift on the Weekly View; the split shows as e.g. 4/3).<br>
           <strong>HC/day</strong> = fixed daily staff: supervisor, technician, QC (counted once per day regardless of shifts).
         </p>
         <table class="gt" id="hc-line-table"></table>
@@ -828,13 +828,20 @@ function wkDem(week,m,wi,weeks){ return lines.reduce((s,l)=>s+lWkDem(l,week,m,wi
 // ════════════════════════════════
 // HEADCOUNT CALC  (labor hours)
 // ════════════════════════════════
+// Per-shift operator count. line.hcS[si] holds a shift-specific value; when absent
+// it falls back to the legacy scalar hc (same headcount on every shift).
+function shiftHC(line, si){ return (line.hcS && line.hcS[si]!=null) ? (+line.hcS[si]||0) : (+line.hc||0); }
+// Operators summed across the active shifts (shifts/day slider)
+function totShiftHC(line){ const n=getP().shifts; let s=0; for(let si=0; si<n; si++) s+=shiftHC(line,si); return s; }
+// Per-shift split label for the active shifts, e.g. "4/3"
+function shiftHCLabel(line){ const n=getP().shifts; return Array.from({length:n},(_,si)=>shiftHC(line,si)).join('/'); }
 // Labor hours for one line for one week:
-//   shift operators : hc/shift × shifts/day × shiftlen × working days
+//   shift operators : sum of per-shift operators × shiftlen × working days
 //   fixed daily     : hcDay × shiftlen × working days (one shift-length per day)
 function lWkHC(line, week, m, wi){
   const p = getP();
   const days = effDays(week,m,wi);
-  const shift = (line.hc||0) * p.shifts * p.shiftlen * days;
+  const shift = totShiftHC(line) * p.shiftlen * days;
   const daily = (line.hcDay||0) * p.shiftlen * days;
   return Math.round(shift + daily);
 }
@@ -842,7 +849,7 @@ function lWkHC(line, week, m, wi){
 function lWkHCshift(line, week, m, wi){
   const p = getP();
   const days = effDays(week,m,wi);
-  return Math.round((line.hc||0) * p.shifts * p.shiftlen * days);
+  return Math.round(totShiftHC(line) * p.shiftlen * days);
 }
 // day-only labor hours (for breakdown)
 function lWkHCday(line, week, m, wi){
@@ -1036,7 +1043,7 @@ function renderHeadcount(){
     tr.innerHTML=`
       <td style="font-size:12px;">${l.name}</td>
       <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
-      <td class="c" style="font-family:var(--mono);font-weight:500;">${l.hc||0}</td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;" title="per active shift">${shiftHCLabel(l)}</td>
       <td class="c" style="font-family:var(--mono);font-weight:500;">${l.hcDay||0}</td>
       <td class="c" style="font-family:var(--mono);color:var(--green-l);font-weight:500;">${hu(moFTE)}</td>
     `;
@@ -1300,7 +1307,7 @@ function renderBacklog(){
   } else {
     const uDay=uShift*p2.shifts;
     const nShift=Math.ceil(res.bl/uShift), nDay=Math.ceil(res.bl/uDay);
-    const hcShiftSum=lines.reduce((s,l)=>s+(l.hc||0),0);
+    const hcShiftSum=lines.reduce((s,l)=>s+totShiftHC(l),0)/Math.max(1,p2.shifts); // avg operators per shift
     const hcDaySum=lines.reduce((s,l)=>s+(l.hcDay||0),0);
     const laborShift=hcShiftSum*p2.shiftlen;                      // one extra shift-day (no extra daily staff)
     const laborDay=(hcShiftSum*p2.shifts+hcDaySum)*p2.shiftlen;   // one full extra day incl. fixed daily staff
@@ -1443,6 +1450,13 @@ function renderMetrics(){
 // ════════════════════════════════
 // LINES TABLE
 // ════════════════════════════════
+// Set a per-shift operator count, materialising hcS from the legacy scalar on first edit
+function setShiftHC(i,si,v){
+  const l=lines[i];
+  if(!Array.isArray(l.hcS)) l.hcS=Array.from({length:3},()=>(+l.hc||0));
+  l.hcS[si]=+v||0;
+  render();
+}
 function renderLines(){
   const body=document.getElementById('lines-body'); body.innerHTML='';
   // fixed pool of line names; a legacy custom name is kept as an extra option
@@ -1458,7 +1472,7 @@ function renderLines(){
       <td><select class="si" onchange="lines[${i}].name=this.value;render()">${nameOpts(l.name)}</select></td>
       <td class="c"><input class="numi" type="number" value="${l.cap}" min="1" max="99999" oninput="lines[${i}].cap=+this.value||0;render()"></td>
       <td class="c"><input class="numi" type="number" value="${l.oee??''}" placeholder="${Math.round(getP().oee*100)}" min="30" max="100" title="Line OEE % (empty = base ${Math.round(getP().oee*100)}%)" oninput="lines[${i}].oee=this.value===''?null:+this.value;render()"></td>
-      <td class="c"><input class="numi" type="number" value="${l.hc||0}" min="0" max="999" title="Operators per shift" oninput="lines[${i}].hc=+this.value||0;render()"></td>
+      <td class="c"><div style="display:flex;gap:2px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>`<input class="numi" type="number" value="${shiftHC(l,si)}" min="0" max="999" style="width:26px;padding:4px 2px;" title="Operators on shift ${si+1}" oninput="setShiftHC(${i},${si},this.value)">`).join('')}</div></td>
       <td class="c"><input class="numi" type="number" value="${l.hcDay||0}" min="0" max="999" title="Fixed daily staff (supervisor, technician…)" oninput="lines[${i}].hcDay=+this.value||0;render()"></td>
       <td><select class="si" onchange="lines[${i}].pg=this.value;render()">${opts}</select></td>
       <td><button class="del-btn" onclick="delLine(${i})">✕</button></td>
@@ -1901,7 +1915,7 @@ function exportCSV(){
     lines.forEach(l=>{
       const moS=weeks.reduce((s,w,wi)=>s+lWkHCshift(l,w,m,wi),0);
       const moD=weeks.reduce((s,w,wi)=>s+lWkHCday(l,w,m,wi),0);
-      rows.push([l.name,pg(l.pg).label,l.hc||0,l.hcDay||0,moS+moD,moS,moD]);
+      rows.push([l.name,pg(l.pg).label,shiftHCLabel(l),l.hcDay||0,moS+moD,moS,moD]);
     });
     rows.push([]);
     rows.push(['WEEKLY LABOR HOURS']);
