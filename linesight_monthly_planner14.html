@@ -201,7 +201,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
             <th style="width:70px;">Line</th>
             <th class="c" style="width:50px;">Cap.(u/h)</th>
             <th class="c" style="width:46px;" title="Line OEE %. Leave empty to use the base OEE slider. Weekly OEE overrides scale all lines proportionally.">OEE%</th>
-            <th class="c" style="width:92px;" title="Operators per shift (one box per active shift; the shifts/day slider sets how many)">HC/shift</th>
+            <th class="c" style="width:100px;" title="Per shift: the S-button turns the shift on/off for this line (capacity counts only running shifts); the box below is the operators on that shift">HC/shift</th>
             <th class="c" style="width:50px;" title="Fixed daily staff">HC/day</th>
             <th style="min-width:84px;">Product group</th>
             <th style="width:22px;"></th>
@@ -790,7 +790,8 @@ function lWkCap(line,week,m,wi){
   const base=Math.round(p.oee*100);
   const wk  =getOvr(m,wi,'oee',base);
   const oee =(line.oee??base)*(wk/base)/100;
-  return Math.round(line.cap*oee*p.shiftlen*p.shifts*days);
+  // capacity counts only the shifts this line actually runs (per-shift line activity)
+  return Math.round(line.cap*oee*p.shiftlen*nActiveShifts(line)*days);
 }
 // Total cap all lines for one week
 function wkCap(week,m,wi){ return lines.reduce((s,l)=>s+lWkCap(l,week,m,wi),0); }
@@ -828,13 +829,17 @@ function wkDem(week,m,wi,weeks){ return lines.reduce((s,l)=>s+lWkDem(l,week,m,wi
 // ════════════════════════════════
 // HEADCOUNT CALC  (labor hours)
 // ════════════════════════════════
+// Whether a line runs on a given shift (default: active on every shift)
+function lineActive(line, si){ return line.actS ? line.actS[si]!==false : true; }
+// How many of the active shifts (shifts/day slider) this line actually runs → drives capacity
+function nActiveShifts(line){ const n=getP().shifts; let c=0; for(let si=0; si<n; si++) if(lineActive(line,si)) c++; return c; }
 // Per-shift operator count. line.hcS[si] holds a shift-specific value; when absent
 // it falls back to the legacy scalar hc (same headcount on every shift).
 function shiftHC(line, si){ return (line.hcS && line.hcS[si]!=null) ? (+line.hcS[si]||0) : (+line.hc||0); }
-// Operators summed across the active shifts (shifts/day slider)
-function totShiftHC(line){ const n=getP().shifts; let s=0; for(let si=0; si<n; si++) s+=shiftHC(line,si); return s; }
-// Per-shift split label for the active shifts, e.g. "4/3"
-function shiftHCLabel(line){ const n=getP().shifts; return Array.from({length:n},(_,si)=>shiftHC(line,si)).join('/'); }
+// Operators summed across the shifts the line actually runs
+function totShiftHC(line){ const n=getP().shifts; let s=0; for(let si=0; si<n; si++) if(lineActive(line,si)) s+=shiftHC(line,si); return s; }
+// Per-shift split label for the active shifts, e.g. "4/3" ("-" = shift off)
+function shiftHCLabel(line){ const n=getP().shifts; return Array.from({length:n},(_,si)=>lineActive(line,si)?shiftHC(line,si):'-').join('/'); }
 // Labor hours for one line for one week:
 //   shift operators : sum of per-shift operators × shiftlen × working days
 //   fixed daily     : hcDay × shiftlen × working days (one shift-length per day)
@@ -1457,6 +1462,13 @@ function setShiftHC(i,si,v){
   l.hcS[si]=+v||0;
   render();
 }
+// Toggle whether a line runs on a given shift (affects capacity and labor)
+function toggleShift(i,si){
+  const l=lines[i];
+  if(!Array.isArray(l.actS)) l.actS=[true,true,true];
+  l.actS[si]=!lineActive(l,si);
+  render();
+}
 function renderLines(){
   const body=document.getElementById('lines-body'); body.innerHTML='';
   // fixed pool of line names; a legacy custom name is kept as an extra option
@@ -1472,7 +1484,7 @@ function renderLines(){
       <td><select class="si" onchange="lines[${i}].name=this.value;render()">${nameOpts(l.name)}</select></td>
       <td class="c"><input class="numi" type="number" value="${l.cap}" min="1" max="99999" oninput="lines[${i}].cap=+this.value||0;render()"></td>
       <td class="c"><input class="numi" type="number" value="${l.oee??''}" placeholder="${Math.round(getP().oee*100)}" min="30" max="100" title="Line OEE % (empty = base ${Math.round(getP().oee*100)}%)" oninput="lines[${i}].oee=this.value===''?null:+this.value;render()"></td>
-      <td class="c"><div style="display:flex;gap:2px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>`<input class="numi" type="number" value="${shiftHC(l,si)}" min="0" max="999" style="width:26px;padding:4px 2px;" title="Operators on shift ${si+1}" oninput="setShiftHC(${i},${si},this.value)">`).join('')}</div></td>
+      <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;"><button onclick="toggleShift(${i},${si})" title="Shift ${si+1} is ${act?'running — click to turn off':'off — click to run this shift'}" style="font-family:var(--mono);font-size:8px;line-height:1;width:26px;padding:2px 0;border-radius:3px;border:.5px solid ${act?'var(--green)':'var(--border)'};cursor:pointer;background:${act?'var(--green-bg)':'transparent'};color:${act?'var(--green-l)':'var(--text2)'};">S${si+1}</button><input class="numi" type="number" value="${shiftHC(l,si)}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Operators on shift ${si+1}" oninput="setShiftHC(${i},${si},this.value)"></div>`;}).join('')}</div></td>
       <td class="c"><input class="numi" type="number" value="${l.hcDay||0}" min="0" max="999" title="Fixed daily staff (supervisor, technician…)" oninput="lines[${i}].hcDay=+this.value||0;render()"></td>
       <td><select class="si" onchange="lines[${i}].pg=this.value;render()">${opts}</select></td>
       <td><button class="del-btn" onclick="delLine(${i})">✕</button></td>
@@ -2421,8 +2433,8 @@ function renderMPS(){
   const stdLoad=r=>r.qty*stdMinOf(r.sku,r.line)+setupOf(r);
   // runtime basis: use the batch's actual run minutes; fall back to the std-minutes estimate
   const batchLoad=r=>runBasis?(r.runMin>0?r.runMin:stdLoad(r)):minBasis?stdLoad(r):r.qty;
-  const dayCap=l=>minMode?Math.round(p.shifts*p.shiftlen*60*((l.oee??base)/100))
-                         :Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*p.shifts);
+  const dayCap=l=>minMode?Math.round(nActiveShifts(l)*p.shiftlen*60*((l.oee??base)/100))
+                         :Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*nActiveShifts(l));
   const fV=minMode?(v=>(Math.round(v/60*10)/10).toLocaleString('en-GB')+' h'):(v=>hu(v)); // basis-aware formatter (hours vs units)
   const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
   const cell={}, cellB={};
