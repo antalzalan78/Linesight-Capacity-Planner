@@ -64,7 +64,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #hc-weekly-table{table-layout:fixed;font-size:11px;}
 #hc-weekly-table td, #hc-weekly-table th{padding:4px 4px;overflow:hidden;}
 #lines-table td, #lines-table th{padding:4px 3px;}
-.mps-chip{cursor:grab;border-radius:3px;padding:0 3px;margin:1px auto;background:rgba(255,255,255,0.07);white-space:nowrap;}
+.mps-chip{cursor:grab;border-radius:3px;padding:1px 4px;margin:1px auto;background:rgba(255,255,255,0.07);white-space:nowrap;}
 .mps-chip:active{cursor:grabbing;}
 .mps-tray-chip{display:inline-flex;align-items:center;gap:5px;cursor:grab;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--bg3);border:.5px solid var(--border);border-radius:5px;padding:3px 6px;}
 .mps-tray-chip:active{cursor:grabbing;}
@@ -2481,16 +2481,16 @@ function renderMPS(){
   // ── Daily line×day grid ──
   const g=document.getElementById('mps-grid'); g.innerHTML='';
   const hr=g.createTHead().insertRow();
-  const thL=document.createElement('th'); thL.textContent='Line'; thL.style.width='52px'; hr.appendChild(thL);
+  const thL=document.createElement('th'); thL.textContent='Line'; thL.style.width='64px'; hr.appendChild(thL);
   for(let d=1;d<=days;d++){
     const th=document.createElement('th'); th.textContent=d; th.className='c';
-    th.style.cssText='padding:2px 1px;font-size:8px;'+(isWork(d)?'':'opacity:.35;');
+    th.style.cssText='padding:4px 3px;font-size:11px;min-width:26px;'+(isWork(d)?'':'opacity:.35;');
     hr.appendChild(th);
   }
   const gb=g.createTBody();
   lines.forEach(l=>{
     const cap=dayCap(l);
-    let html=`<td style="font-family:var(--mono);font-size:10px;">${l.name}</td>`;
+    let html=`<td style="font-family:var(--mono);font-size:12px;">${l.name}</td>`;
     for(let d=1;d<=days;d++){
       const a=spill[l.name][d];
       const wk=isWork(d);
@@ -2511,7 +2511,7 @@ Job no: ${r.job}`:''}">${hu(r.qty)}</div>`).join('');
       const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: load ${fV(a.load)} / cap ${fV(wk?cap:0)}${runBasis?' (actual run time)':minBasis?' (std minutes)':' (units)'}
 carry-in ${fV(a.carryIn)} → produced ${fV(a.prod)} → carry-over ${fV(a.carryOut)}
 ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(r.job?' ['+r.job+']':'')+': '+hu(r.qty)+' u').join('\n')}"`:'';
-      html+=`<td class="c"${tip} data-line="${l.name}" data-day="${d}" style="padding:2px 1px;font-size:8px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
+      html+=`<td class="c"${tip} data-line="${l.name}" data-day="${d}" style="padding:4px 3px;font-size:11px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
     }
     gb.insertRow().innerHTML=html;
   });
