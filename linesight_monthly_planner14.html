@@ -67,6 +67,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .mps-chip{cursor:grab;border-radius:3px;padding:1px 4px;margin:1px auto;background:rgba(255,255,255,0.07);white-space:nowrap;}
 .mps-chip:active{cursor:grabbing;}
 .mps-chip.mps-done{opacity:.55;text-decoration:line-through;text-decoration-color:rgba(255,255,255,.4);}
+.mps-chip.mps-co{border-left:2px solid var(--yellow);}
 .mps-tray-chip{display:inline-flex;align-items:center;gap:5px;cursor:grab;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--bg3);border:.5px solid var(--border);border-radius:5px;padding:3px 6px;}
 .mps-tray-chip:active{cursor:grabbing;}
 .mps-tray-chip .tc-x{border:none;background:none;color:var(--text2);cursor:pointer;font-size:11px;padding:0 0 0 2px;line-height:1;}
@@ -1986,10 +1987,10 @@ function exportCSV(){
 
   else if(activeTab==='mps'){
     rows.push(['MPS BATCH PLAN']);
-    rows.push(['Date','Line','Job no','SKU','Product group','Qty','Produced','Status']);
-    mps.filter(r=>mkOfDate(r.date)===m).forEach(r=>{
+    rows.push(['Date','Line','Seq','Job no','SKU','Product group','Qty','Produced','Status']);
+    mps.filter(r=>mkOfDate(r.date)===m).sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1:((a.seq??1e9)-(b.seq??1e9))).forEach(r=>{
       const s=skuOf(r.sku);
-      rows.push([r.date,r.line,r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty,r.produced>0?r.produced:'',r.status||(batchDone(r)?'Completed':'')]);
+      rows.push([r.date,r.line,r.seq??'',r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty,r.produced>0?r.produced:'',r.status||(batchDone(r)?'Completed':'')]);
     });
   }
   else if(activeTab==='scenarios'){
@@ -2219,6 +2220,7 @@ function mpsShowMapping(){
     hchr: guess([/hc.?total.?hr|total.?hr|run.?time.?h|batch.?hr/i]),
     prod: guess([/produced|qty.?prod|prod.?qty|actual.?qty|gyart|legyart/i]),
     status:guess([/status|state|statusz|allapot/i]),
+    seq: guess([/seq|sequence|sorrend|volgorde/i]),
   };
   const sel=(id,gi,none)=>`<select id="mm-${id}" class="si" style="width:100%;">${none?`<option value="-1"${gi<0?' selected':''}>— none</option>`:''}${head.map((h,i)=>`<option value="${i}"${i===gi?' selected':''}>${h}</option>`).join('')}</select>`;
   document.getElementById('mps-map').innerHTML=`
@@ -2236,6 +2238,7 @@ function mpsShowMapping(){
       <div><div style="color:var(--text2);margin-bottom:3px;">Batch run time, hrs (optional)</div>${sel('hchr',g.hchr,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Produced qty (optional)</div>${sel('prod',g.prod,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Status (optional)</div>${sel('status',g.status,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Sequence no. (optional)</div>${sel('seq',g.seq,true)}</div>
     </div>
     <button class="add-btn" onclick="mpsParse()">→ Parse rows</button>
   `;
@@ -2274,13 +2277,14 @@ function mpsConvert(ci){
     // adherence: produced quantity and status text
     if(ci.prod>=0){ const pv=parseQty(r[ci.prod]); if(pv>0) row.produced=pv; }
     if(ci.status>=0){ const st=String(r[ci.status]??'').trim(); if(st) row.status=st; }
+    if(ci.seq>=0){ const sv=parseFloat(String(r[ci.seq]).replace(',','.')); if(sv>0) row.seq=sv; }
     out.push(row);
   });
   return {out, errs, unknown, skuInfo};
 }
 function mpsParse(){
   const col=id=>+document.getElementById('mm-'+id).value;
-  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup'),hcmin:col('hcmin'),hchr:col('hchr'),prod:col('prod'),status:col('status')};
+  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup'),hcmin:col('hcmin'),hchr:col('hchr'),prod:col('prod'),status:col('status'),seq:col('seq')};
   const res=mpsConvert(mpsCtx);
   const el=document.getElementById('mps-preview');
   mpsUnknown=Object.keys(res.unknown);
@@ -2464,15 +2468,16 @@ function autoPlace(){
 function setBatchDate(i,v){ if(v) mps[i].date=v; mpsResort(); render(); }
 function setBatchLine(i,v){ mps[i].line=v; render(); }
 function setProduced(i,v){ if(v===''||+v<=0) delete mps[i].produced; else mps[i].produced=+v; render(); }
+function setSeq(i,v){ if(v===''||+v<=0) delete mps[i].seq; else mps[i].seq=+v; render(); }
 function mpsExport(){
   const m=mk(curDate);
-  const rows=mps.filter(r=>mkOfDate(r.date)===m).map(r=>{
+  const rows=mps.filter(r=>mkOfDate(r.date)===m).sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1:((a.seq??1e9)-(b.seq??1e9))).map(r=>{
     const s=skuOf(r.sku);
-    return {Date:r.date, Line:r.line, 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, Produced:r.produced>0?r.produced:'', Status:r.status||(batchDone(r)?'Completed':''), 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
+    return {Date:r.date, Line:r.line, Seq:r.seq??'', 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, Produced:r.produced>0?r.produced:'', Status:r.status||(batchDone(r)?'Completed':''), 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
   });
   if(!rows.length){ alert('No batches in the selected month to export.'); return; }
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:8},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:10},{wch:12},{wch:12},{wch:10},{wch:10}];
+  ws['!cols']=[{wch:12},{wch:8},{wch:6},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:10},{wch:12},{wch:12},{wch:10},{wch:10}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'MPS');
   XLSX.writeFile(wb,`linesight_mps_${curDate.getFullYear()}-${String(curDate.getMonth()+1).padStart(2,'0')}.xlsx`);
@@ -2505,6 +2510,18 @@ function renderMPS(){
     (cell[r.line]??={})[d]=(cell[r.line][d]||0)+batchLoad(r);
     ((cellB[r.line]??={})[d]??=[]).push({gi:mps.indexOf(r), r});
   });
+  // order each day's batches by sequence number (then original order)
+  Object.values(cellB).forEach(byDay=>Object.values(byDay).forEach(list=>list.sort((a,b)=>(a.r.seq??1e9)-(b.r.seq??1e9))));
+  // changeover detection: along each line's chronological order (date, then sequence),
+  // a batch whose SKU differs from the previous one is a changeover (needs a setup)
+  const coBatches=new Set(); const changeovers={};
+  lines.forEach(l=>{
+    const ordered=monthRows.filter(r=>r.line===l.name).sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:((a.seq??1e9)-(b.seq??1e9)));
+    let prevSku=null, co=0;
+    ordered.forEach(r=>{ if(prevSku!==null&&r.sku!==prevSku){ co++; coBatches.add(r); } prevSku=r.sku; });
+    changeovers[l.name]=co;
+  });
+  const totalCO=Object.values(changeovers).reduce((s,v)=>s+v,0);
   // Spill-over model: a batch is booked on its start day and keeps producing on the
   // following idle working days (multi-day batches). carryOut = what still has to run
   // after that day; red only where the carry never returns to zero within the month.
@@ -2547,6 +2564,7 @@ function renderMPS(){
     <div class="metric"><div class="metric-label">Off-day batches</div><div class="metric-val ${offDays?'warn':'ok'}">${offDays}</div><div class="metric-sub">on weekend / holiday</div></div>
     <div class="metric"><div class="metric-label">Unassigned SKUs</div><div class="metric-val ${unSkus?'warn':'ok'}">${unSkus}</div><div class="metric-sub">no product group</div></div>
     <div class="metric"><div class="metric-label">Un-allocated</div><div class="metric-val ${parkRows.length?'warn':'ok'}">${parkRows.length}</div><div class="metric-sub">${parkRows.length?hu(parkRows.reduce((s,r)=>s+r.qty,0))+' units parked':'all scheduled'}</div></div>
+    <div class="metric"><div class="metric-label">Changeovers</div><div class="metric-val ${totalCO?'warn':'ok'}">${totalCO}</div><div class="metric-sub">SKU changes in sequence</div></div>
   `;
 
   // ── Daily line×day grid ──
@@ -2568,8 +2586,9 @@ function renderMPS(){
       let bg='transparent', col='var(--text2)', txt='';
       if(a.load>0){
         const list=(cellB[l.name]||{})[d]||[];
-        txt=list.map(({gi,r})=>{const done=batchDone(r);return `<div class="mps-chip${done?' mps-done':''}" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.job?`
-Job no: ${r.job}`:''}${r.produced>0?`
+        txt=list.map(({gi,r})=>{const done=batchDone(r);const co=coBatches.has(r);return `<div class="mps-chip${done?' mps-done':''}${co?' mps-co':''}" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.seq>0?` (seq ${r.seq})`:''}${r.job?`
+Job no: ${r.job}`:''}${co?`
+⇄ changeover (SKU change from the previous batch)`:''}${r.produced>0?`
 Produced: ${hu(r.produced)}`:''}${r.status?`
 Status: ${r.status}`:''}">${done?'✓':''}${hu(r.qty)}</div>`;}).join('');
         if(!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
@@ -2632,9 +2651,11 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
   if(mpsFltDate) shown=shown.filter(r=>r.date===mpsFltDate);
   document.getElementById('mf-count').textContent=
     (mpsFltLine||mpsFltPg||mpsFltDate)?`${shown.length} / ${monthRows.length} batches · ${hu(shown.reduce((s,r)=>s+r.qty,0))} units`:`${monthRows.length} batches`;
+  // show in run order: date, then line, then sequence
+  shown=shown.slice().sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1: ((a.seq??1e9)-(b.seq??1e9)));
   const bt=document.getElementById('mps-batch-table'); bt.innerHTML='';
   const bh=bt.createTHead().insertRow();
-  ['Date','Line','Job no.','SKU','Group','Qty','Produced','Status',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=i>=5?'c':''; bh.appendChild(th);});
+  ['Date','Line','Seq','Job no.','SKU','Group','Qty','Produced','Status',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=(i===2||i>=6)?'c':''; bh.appendChild(th);});
   const bb=bt.createTBody();
   shown.forEach(r=>{
     const gi=mps.indexOf(r);
@@ -2647,6 +2668,7 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
     bb.insertRow().innerHTML=`
       <td style="width:126px;"><input type="date" class="wni" style="width:118px;font-size:10px;text-align:left;padding:3px 5px;color-scheme:dark;" value="${r.date}" onchange="setBatchDate(${gi},this.value)"></td>
       <td style="width:76px;"><select class="si" style="width:68px;" onchange="setBatchLine(${gi},this.value)">${lines.map(l2=>`<option value="${l2.name}"${l2.name===r.line?' selected':''}>${l2.name}</option>`).join('')}</select></td>
+      <td class="c" style="width:44px;"><input class="wni" type="number" style="width:38px;${coBatches.has(r)?'border-color:var(--yellow);':''}" value="${r.seq??''}" min="0" placeholder="—" title="Sequence within the day${coBatches.has(r)?' · ⇄ changeover (SKU change)':''}" oninput="setSeq(${gi},this.value)"></td>
       <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.job||'—'}</td>
       <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
       <td>${grp?`<span class="pg-dot" style="background:${grp.color};"></span><span style="font-size:10px;">${grp.label}</span>`:'<span style="font-size:10px;color:var(--yellow);">—</span>'}</td>
@@ -2656,7 +2678,7 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
       <td class="c"><button class="del-btn" onclick="delBatch(${gi})">✕</button></td>
     `;
   });
-  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="9" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
+  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="10" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
 
   // ── Add-batch form + SKU master ──
   const mbLine=document.getElementById('mb-line');
