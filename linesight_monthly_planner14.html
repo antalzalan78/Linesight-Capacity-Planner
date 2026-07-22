@@ -265,7 +265,10 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <div class="section-label" style="margin:14px 0 6px;">Weekly load by line <span style="text-transform:none;letter-spacing:0;color:var(--text2);">— booked load vs. available capacity per week</span></div>
     <div style="overflow-x:auto;"><table class="gt" id="mps-week-table"></table></div>
     <div id="mps-tray" style="margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;">
-      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
+        <button id="mps-autoplace" onclick="autoPlace()" title="Schedule all parked batches onto their line's earliest free capacity, avoiding overload" style="display:none;flex-shrink:0;font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:5px;border:.5px solid var(--green);background:var(--green-bg);color:var(--green-l);cursor:pointer;">⚡ Auto-place</button>
+      </div>
       <div id="mps-tray-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
     </div>
       </div>
@@ -2137,6 +2140,16 @@ const mkOfDate=ds=>{const [y,mo]=ds.split('-').map(Number); return `${y}-${mo-1}
 const skuOf=c=>skus.find(s=>s.code===c);
 // A batch counts as completed when its status says so, or it has produced its planned quantity
 const batchDone=r=>/complet|done|finish|closed|k[eé]sz|klaar|gereed/i.test(r.status||'')||(r.produced>0&&r.produced>=r.qty);
+// ── Basis-aware load/capacity (shared by the grid, weekly summary and auto-place) ──
+const mpsIsMin=()=>mpsBasis==='min'||mpsBasis==='runtime';
+const mpsStdMin=(sku,line)=>{ const s=skuOf(sku); if(s&&s.stdMin>0) return s.stdMin; const l=lines.find(x=>x.name===line); return l&&l.cap>0?60/l.cap:0; };
+const mpsSetup=r=>(r.setup>0?r.setup:mpsSetupDef)||0;
+function mpsBatchLoad(r){
+  if(mpsBasis==='runtime') return r.runMin>0?r.runMin:(r.qty*mpsStdMin(r.sku,r.line)+mpsSetup(r));
+  if(mpsBasis==='min')     return r.qty*mpsStdMin(r.sku,r.line)+mpsSetup(r);
+  return r.qty;
+}
+function mpsDayCap(l){ const p=getP(), base=Math.round(p.oee*100); return mpsIsMin()?Math.round(nActiveShifts(l)*p.shiftlen*60*((l.oee??base)/100)):Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*nActiveShifts(l)); }
 function normLine(v){
   const raw=String(v||'').trim();
   if(lineAlias[raw]) return lineAlias[raw];
@@ -2361,6 +2374,48 @@ function parkBatch(gi){
   const r=mps[gi]; if(!r||r.unalloc) return;
   r.unalloc=true; render();
 }
+// Auto-place / level: schedule this month's un-allocated batches onto their own line's
+// earliest day that keeps the line's load absorbable by month end (no red overload).
+function autoPlace(){
+  const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
+  const days=new Date(year,month+1,0).getDate();
+  const parked=mps.filter(r=>r.unalloc&&mkOfDate(r.date)===m);
+  if(!parked.length){ alert('No un-allocated batches in this month to place.'); return; }
+  if(!confirm(`Auto-place ${parked.length} un-allocated batch(es) onto their line's earliest free capacity?`)) return;
+  const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
+  const dayStr=d=>`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  let placed=0, overloaded=0, noCap=0;
+  const byLine={}; parked.forEach(r=>{ (byLine[r.line]??=[]).push(r); });
+  Object.entries(byLine).forEach(([lineName,batches])=>{
+    const l=lines.find(x=>x.name===lineName);
+    const cap=l?mpsDayCap(l):0;
+    if(!l||cap<=0){ noCap+=batches.length; return; } // no running capacity — leave parked
+    // remaining capacity per working day = day cap minus what committed batches already use (spill-aware)
+    const remaining={}; for(let d=1;d<=days;d++) remaining[d]=isWork(d)?cap:0;
+    const committed={};
+    mps.filter(r=>!r.unalloc&&r.line===lineName&&mkOfDate(r.date)===m).forEach(r=>{ const d=+r.date.split('-')[2]; committed[d]=(committed[d]||0)+mpsBatchLoad(r); });
+    let carry=0; for(let d=1;d<=days;d++){ carry+=committed[d]||0; const use=Math.min(remaining[d],carry); remaining[d]-=use; carry-=use; }
+    if(!Object.values(remaining).some(v=>v>0)&&!Object.keys(committed).length){ /* fully blocked, still try */ }
+    batches.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:0); // respect intended order
+    batches.forEach(r=>{
+      const bl=mpsBatchLoad(r);
+      // level: earliest day that fits fully; else earliest with any spare; else earliest working day
+      let chosen=null;
+      for(let d=1;d<=days;d++){ if(remaining[d]>=bl){ chosen=d; break; } }
+      if(chosen==null) for(let d=1;d<=days;d++){ if(remaining[d]>0){ chosen=d; break; } }
+      if(chosen==null) for(let d=1;d<=days;d++){ if(isWork(d)){ chosen=d; break; } }
+      if(chosen==null){ noCap++; return; } // no working day at all this month
+      r.date=dayStr(chosen); delete r.unalloc; placed++;
+      let need=bl; for(let d=chosen;d<=days&&need>0;d++){ const use=Math.min(remaining[d],need); remaining[d]-=use; need-=use; }
+      if(need>0) overloaded++; // could not be fully absorbed before month end
+    });
+  });
+  mpsResort(); render();
+  const msg=[`✓ Placed ${placed} batch(es).`];
+  if(overloaded) msg.push(`${overloaded} could not fit without overloading its line (shown red) — add capacity or move them.`);
+  if(noCap) msg.push(`${noCap} left parked (their line has no running shift).`);
+  if(overloaded||noCap) alert(msg.join('\n'));
+}
 // Grid + tray drag & drop (delegated once on elements that survive re-renders)
 (function(){
   const grid=document.getElementById('mps-grid');
@@ -2440,14 +2495,8 @@ function renderMPS(){
   document.getElementById('mps-setup-wrap').style.display=minBasis?'inline-flex':'none';
   const setupInp=document.getElementById('mps-setup');
   if(document.activeElement!==setupInp) setupInp.value=mpsSetupDef||'';
-  // standard minutes per unit for a SKU; falls back to the line's flat rate (60 / cap u/h)
-  const stdMinOf=(sku,line)=>{ const s=skuOf(sku); if(s&&s.stdMin>0) return s.stdMin; const l=lines.find(x=>x.name===line); return l&&l.cap>0?60/l.cap:0; };
-  const setupOf=r=>(r.setup>0?r.setup:mpsSetupDef)||0;
-  const stdLoad=r=>r.qty*stdMinOf(r.sku,r.line)+setupOf(r);
-  // runtime basis: use the batch's actual run minutes; fall back to the std-minutes estimate
-  const batchLoad=r=>runBasis?(r.runMin>0?r.runMin:stdLoad(r)):minBasis?stdLoad(r):r.qty;
-  const dayCap=l=>minMode?Math.round(nActiveShifts(l)*p.shiftlen*60*((l.oee??base)/100))
-                         :Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*nActiveShifts(l));
+  // basis-aware load & capacity (shared module helpers, single source of truth)
+  const batchLoad=mpsBatchLoad, dayCap=mpsDayCap;
   const fV=minMode?(v=>(Math.round(v/60*10)/10).toLocaleString('en-GB')+' h'):(v=>hu(v)); // basis-aware formatter (hours vs units)
   const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
   const cell={}, cellB={};
@@ -2560,6 +2609,7 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(
   wttr.innerHTML=`<td>TOTAL</td>`+wkWeeks.map((w,wi)=>{const ut=colCap[wi]>0?Math.round(colLoad[wi]/colCap[wi]*100):0;return `<td class="c" style="color:${colCap[wi]>0?tCol(ut):'var(--text2)'};">${colCap[wi]>0?ut+'%':'—'}</td>`;}).join('')+`<td class="c" style="color:${totCap>0?tCol(totUt):'var(--text2)'};">${totCap>0?totUt+'%':'—'}</td>`;
 
   // ── Un-allocated tray ──
+  document.getElementById('mps-autoplace').style.display=parkRows.length?'inline-block':'none';
   const tray=document.getElementById('mps-tray-list');
   tray.innerHTML=parkRows.length?parkRows.map(r=>{
     const gi=mps.indexOf(r), s=skuOf(r.sku), c=s&&s.pg?pg(s.pg).color:'var(--text2)';
