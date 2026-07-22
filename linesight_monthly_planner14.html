@@ -262,6 +262,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     </div>
         <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time, and <em>Run time/batch</em> uses each batch's actual run minutes (imported from HC_Total_Min / HC_Total_Hrs), the most reliable option when your sheet already carries it. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong> Completed batches (from the Status/Produced columns) show struck-through with a ✓; the Adherence tile tracks produced vs. planned.</p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
+    <div class="section-label" style="margin:14px 0 6px;">Weekly load by line <span style="text-transform:none;letter-spacing:0;color:var(--text2);">— booked load vs. available capacity per week</span></div>
+    <div style="overflow-x:auto;"><table class="gt" id="mps-week-table"></table></div>
     <div id="mps-tray" style="margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;">
       <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
       <div id="mps-tray-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
@@ -2537,6 +2539,25 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(
     }
     gb.insertRow().innerHTML=html;
   });
+
+  // ── Weekly load-by-line summary (booked load vs. available capacity per week) ──
+  const wkWeeks=weeksOf(year,month);
+  const wt=document.getElementById('mps-week-table'); wt.innerHTML='';
+  const whr=wt.createTHead().insertRow();
+  ['Line',...wkWeeks.map(w=>w.label),'Month'].forEach((h,i)=>{const th=document.createElement('th');th.textContent=h;th.className=i?'c':'';th.style.whiteSpace='nowrap';whr.appendChild(th);});
+  const wtb=wt.createTBody();
+  const weekLoadCap=(l,w)=>{ let load=0,cap=0; for(let dt=new Date(w.start);dt<=w.end;dt.setDate(dt.getDate()+1)){ if(dt.getMonth()!==month) continue; const d=dt.getDate(); load+=cell[l.name]?.[d]||0; if(isWork(d)) cap+=dayCap(l); } return {load,cap}; };
+  const colLoad=wkWeeks.map(()=>0), colCap=wkWeeks.map(()=>0);
+  const utCell=c=>`<td class="c" style="font-family:var(--mono);font-size:11px;color:${c.cap===0?'var(--text2)':tCol(c.ut)};" title="load ${fV(c.load)} / cap ${fV(c.cap)}">${c.cap===0?(c.load>0?'⚠':'—'):c.ut+'%'}</td>`;
+  lines.forEach(l=>{
+    let moLoad=0,moCap=0;
+    const cells=wkWeeks.map((w,wi)=>{ const {load,cap}=weekLoadCap(l,w); colLoad[wi]+=load; colCap[wi]+=cap; moLoad+=load; moCap+=cap; return {ut:cap>0?Math.round(load/cap*100):0,load,cap}; });
+    const moUt=moCap>0?Math.round(moLoad/moCap*100):0;
+    wtb.insertRow().innerHTML=`<td style="font-family:var(--mono);font-size:11px;">${l.name}</td>`+cells.map(utCell).join('')+`<td class="c" style="font-family:var(--mono);font-weight:500;color:${moCap===0?'var(--text2)':tCol(moUt)};">${moCap===0?(moLoad>0?'⚠':'—'):moUt+'%'}</td>`;
+  });
+  const totLoad=colLoad.reduce((s,v)=>s+v,0), totCap=colCap.reduce((s,v)=>s+v,0), totUt=totCap>0?Math.round(totLoad/totCap*100):0;
+  const wttr=wtb.insertRow(); wttr.className='tot';
+  wttr.innerHTML=`<td>TOTAL</td>`+wkWeeks.map((w,wi)=>{const ut=colCap[wi]>0?Math.round(colLoad[wi]/colCap[wi]*100):0;return `<td class="c" style="color:${colCap[wi]>0?tCol(ut):'var(--text2)'};">${colCap[wi]>0?ut+'%':'—'}</td>`;}).join('')+`<td class="c" style="color:${totCap>0?tCol(totUt):'var(--text2)'};">${totCap>0?totUt+'%':'—'}</td>`;
 
   // ── Un-allocated tray ──
   const tray=document.getElementById('mps-tray-list');
