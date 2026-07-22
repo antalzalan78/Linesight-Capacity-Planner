@@ -66,6 +66,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #lines-table td, #lines-table th{padding:4px 3px;}
 .mps-chip{cursor:grab;border-radius:3px;padding:1px 4px;margin:1px auto;background:rgba(255,255,255,0.07);white-space:nowrap;}
 .mps-chip:active{cursor:grabbing;}
+.mps-chip.mps-done{opacity:.55;text-decoration:line-through;text-decoration-color:rgba(255,255,255,.4);}
 .mps-tray-chip{display:inline-flex;align-items:center;gap:5px;cursor:grab;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--bg3);border:.5px solid var(--border);border-radius:5px;padding:3px 6px;}
 .mps-tray-chip:active{cursor:grabbing;}
 .mps-tray-chip .tc-x{border:none;background:none;color:var(--text2);cursor:pointer;font-size:11px;padding:0 0 0 2px;line-height:1;}
@@ -259,7 +260,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         </span>
       </div>
     </div>
-        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time, and <em>Run time/batch</em> uses each batch's actual run minutes (imported from HC_Total_Min / HC_Total_Hrs), the most reliable option when your sheet already carries it. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong></p>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time, and <em>Run time/batch</em> uses each batch's actual run minutes (imported from HC_Total_Min / HC_Total_Hrs), the most reliable option when your sheet already carries it. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong> Completed batches (from the Status/Produced columns) show struck-through with a ✓; the Adherence tile tracks produced vs. planned.</p>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
     <div id="mps-tray" style="margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;">
       <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
@@ -1980,10 +1981,10 @@ function exportCSV(){
 
   else if(activeTab==='mps'){
     rows.push(['MPS BATCH PLAN']);
-    rows.push(['Date','Line','Job no','SKU','Product group','Qty']);
+    rows.push(['Date','Line','Job no','SKU','Product group','Qty','Produced','Status']);
     mps.filter(r=>mkOfDate(r.date)===m).forEach(r=>{
       const s=skuOf(r.sku);
-      rows.push([r.date,r.line,r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty]);
+      rows.push([r.date,r.line,r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty,r.produced>0?r.produced:'',r.status||(batchDone(r)?'Completed':'')]);
     });
   }
   else if(activeTab==='scenarios'){
@@ -2132,6 +2133,8 @@ function renderScenarios(){
 // ════════════════════════════════
 const mkOfDate=ds=>{const [y,mo]=ds.split('-').map(Number); return `${y}-${mo-1}`;};
 const skuOf=c=>skus.find(s=>s.code===c);
+// A batch counts as completed when its status says so, or it has produced its planned quantity
+const batchDone=r=>/complet|done|finish|closed|k[eé]sz|klaar|gereed/i.test(r.status||'')||(r.produced>0&&r.produced>=r.qty);
 function normLine(v){
   const raw=String(v||'').trim();
   if(lineAlias[raw]) return lineAlias[raw];
@@ -2199,6 +2202,8 @@ function mpsShowMapping(){
     setup:guess([/setup|set.?up|change.?over|omst/i]),
     hcmin:guess([/hc.?total.?min|total.?run.?min|batch.?run.?min|runtime.?min/i]),
     hchr: guess([/hc.?total.?hr|total.?hr|run.?time.?h|batch.?hr/i]),
+    prod: guess([/produced|qty.?prod|prod.?qty|actual.?qty|gyart|legyart/i]),
+    status:guess([/status|state|statusz|allapot/i]),
   };
   const sel=(id,gi,none)=>`<select id="mm-${id}" class="si" style="width:100%;">${none?`<option value="-1"${gi<0?' selected':''}>— none</option>`:''}${head.map((h,i)=>`<option value="${i}"${i===gi?' selected':''}>${h}</option>`).join('')}</select>`;
   document.getElementById('mps-map').innerHTML=`
@@ -2214,6 +2219,8 @@ function mpsShowMapping(){
       <div><div style="color:var(--text2);margin-bottom:3px;">Setup min (optional)</div>${sel('setup',g.setup,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Batch run time, min (optional)</div>${sel('hcmin',g.hcmin,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Batch run time, hrs (optional)</div>${sel('hchr',g.hchr,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Produced qty (optional)</div>${sel('prod',g.prod,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Status (optional)</div>${sel('status',g.status,true)}</div>
     </div>
     <button class="add-btn" onclick="mpsParse()">→ Parse rows</button>
   `;
@@ -2249,13 +2256,16 @@ function mpsConvert(ci){
     const row={date,line,sku:skuC,qty,job};
     if(setup>0) row.setup=setup;
     if(runMin>0) row.runMin=Math.round(runMin*100)/100;
+    // adherence: produced quantity and status text
+    if(ci.prod>=0){ const pv=parseQty(r[ci.prod]); if(pv>0) row.produced=pv; }
+    if(ci.status>=0){ const st=String(r[ci.status]??'').trim(); if(st) row.status=st; }
     out.push(row);
   });
   return {out, errs, unknown, skuInfo};
 }
 function mpsParse(){
   const col=id=>+document.getElementById('mm-'+id).value;
-  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup'),hcmin:col('hcmin'),hchr:col('hchr')};
+  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup'),hcmin:col('hcmin'),hchr:col('hchr'),prod:col('prod'),status:col('status')};
   const res=mpsConvert(mpsCtx);
   const el=document.getElementById('mps-preview');
   mpsUnknown=Object.keys(res.unknown);
@@ -2396,15 +2406,16 @@ function parkBatch(gi){
 })();
 function setBatchDate(i,v){ if(v) mps[i].date=v; mpsResort(); render(); }
 function setBatchLine(i,v){ mps[i].line=v; render(); }
+function setProduced(i,v){ if(v===''||+v<=0) delete mps[i].produced; else mps[i].produced=+v; render(); }
 function mpsExport(){
   const m=mk(curDate);
   const rows=mps.filter(r=>mkOfDate(r.date)===m).map(r=>{
     const s=skuOf(r.sku);
-    return {Date:r.date, Line:r.line, 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
+    return {Date:r.date, Line:r.line, 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, Produced:r.produced>0?r.produced:'', Status:r.status||(batchDone(r)?'Completed':''), 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
   });
   if(!rows.length){ alert('No batches in the selected month to export.'); return; }
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:8},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:12},{wch:10},{wch:10}];
+  ws['!cols']=[{wch:12},{wch:8},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:10},{wch:12},{wch:12},{wch:10},{wch:10}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'MPS');
   XLSX.writeFile(wb,`linesight_mps_${curDate.getFullYear()}-${String(curDate.getMonth()+1).padStart(2,'0')}.xlsx`);
@@ -2469,9 +2480,18 @@ function renderMPS(){
     if(isWork(d)&&(a.load>0||a.carryIn>0)&&nClear[l.name][d]) overDays++;
   }});
   const unSkus=skus.filter(s=>!s.pg).length;
+  // adherence (plan vs actual) over all this month's batches, scheduled and parked
+  const allMonth=monthRows.concat(parkRows);
+  const doneRows=allMonth.filter(batchDone);
+  const hasAdh=allMonth.some(r=>r.produced>0||r.status);
+  const totPlannedAll=allMonth.reduce((s,r)=>s+r.qty,0);
+  const totProduced=allMonth.reduce((s,r)=>s+(r.produced||0),0);
+  const adh=totPlannedAll>0?Math.round(totProduced/totPlannedAll*100):0;
+  const adhCls=adh>=95?'ok':adh>=80?'warn':'danger';
   document.getElementById('mps-strip').innerHTML=`
-    <div class="metric"><div class="metric-label">Batches this month</div><div class="metric-val">${monthRows.length}</div><div class="metric-sub">${[...new Set(monthRows.map(r=>r.sku))].length} SKUs</div></div>
+    <div class="metric"><div class="metric-label">Batches this month</div><div class="metric-val">${monthRows.length}</div><div class="metric-sub">${[...new Set(monthRows.map(r=>r.sku))].length} SKUs${hasAdh?` · ${doneRows.length} done`:''}</div></div>
     <div class="metric"><div class="metric-label">Planned quantity</div><div class="metric-val">${hu(totQty)}</div><div class="metric-sub">units</div></div>
+    <div class="metric"><div class="metric-label">Adherence</div><div class="metric-val ${hasAdh?adhCls:''}">${hasAdh?adh+'%':'—'}</div><div class="metric-sub">${hasAdh?hu(totProduced)+' / '+hu(totPlannedAll)+' produced':'no actuals yet'}</div></div>
     <div class="metric"><div class="metric-label">Overloaded line-days</div><div class="metric-val ${overDays?'danger':'ok'}">${overDays}</div><div class="metric-sub">spill-over cannot absorb</div></div>
     <div class="metric"><div class="metric-label">Off-day batches</div><div class="metric-val ${offDays?'warn':'ok'}">${offDays}</div><div class="metric-sub">on weekend / holiday</div></div>
     <div class="metric"><div class="metric-label">Unassigned SKUs</div><div class="metric-val ${unSkus?'warn':'ok'}">${unSkus}</div><div class="metric-sub">no product group</div></div>
@@ -2497,8 +2517,10 @@ function renderMPS(){
       let bg='transparent', col='var(--text2)', txt='';
       if(a.load>0){
         const list=(cellB[l.name]||{})[d]||[];
-        txt=list.map(({gi,r})=>`<div class="mps-chip" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.job?`
-Job no: ${r.job}`:''}">${hu(r.qty)}</div>`).join('');
+        txt=list.map(({gi,r})=>{const done=batchDone(r);return `<div class="mps-chip${done?' mps-done':''}" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.job?`
+Job no: ${r.job}`:''}${r.produced>0?`
+Produced: ${hu(r.produced)}`:''}${r.status?`
+Status: ${r.status}`:''}">${done?'✓':''}${hu(r.qty)}</div>`;}).join('');
         if(!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
         else if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else if(a.carryIn>0||a.carryOut>0){ bg='rgba(55,138,221,0.2)'; col='var(--blue-l)'; }
@@ -2541,22 +2563,29 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
     (mpsFltLine||mpsFltPg||mpsFltDate)?`${shown.length} / ${monthRows.length} batches · ${hu(shown.reduce((s,r)=>s+r.qty,0))} units`:`${monthRows.length} batches`;
   const bt=document.getElementById('mps-batch-table'); bt.innerHTML='';
   const bh=bt.createTHead().insertRow();
-  ['Date','Line','Job no.','SKU','Group','Qty',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=i>=5?'c':''; bh.appendChild(th);});
+  ['Date','Line','Job no.','SKU','Group','Qty','Produced','Status',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=i>=5?'c':''; bh.appendChild(th);});
   const bb=bt.createTBody();
   shown.forEach(r=>{
     const gi=mps.indexOf(r);
     const s=skuOf(r.sku), grp=s&&s.pg?pg(s.pg):null;
+    const done=batchDone(r);
+    const adhP=r.qty>0&&r.produced>0?Math.round(r.produced/r.qty*100):null;
+    const statusCell=done?'<span class="pill pill-ok">✓ done</span>'
+      :adhP!=null?`<span class="pill ${adhP>=80?'pill-warn':'pill-danger'}" title="${r.status||''}">${adhP}%</span>`
+      :`<span style="font-size:10px;color:var(--text2);">${r.status||'—'}</span>`;
     bb.insertRow().innerHTML=`
       <td style="width:126px;"><input type="date" class="wni" style="width:118px;font-size:10px;text-align:left;padding:3px 5px;color-scheme:dark;" value="${r.date}" onchange="setBatchDate(${gi},this.value)"></td>
       <td style="width:76px;"><select class="si" style="width:68px;" onchange="setBatchLine(${gi},this.value)">${lines.map(l2=>`<option value="${l2.name}"${l2.name===r.line?' selected':''}>${l2.name}</option>`).join('')}</select></td>
       <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.job||'—'}</td>
       <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
       <td>${grp?`<span class="pg-dot" style="background:${grp.color};"></span><span style="font-size:10px;">${grp.label}</span>`:'<span style="font-size:10px;color:var(--yellow);">—</span>'}</td>
-      <td class="c" style="width:70px;"><input class="wni" type="number" style="width:60px;" value="${r.qty}" min="1" oninput="mps[${gi}].qty=+this.value||0;render()"></td>
+      <td class="c" style="width:64px;"><input class="wni" type="number" style="width:56px;" value="${r.qty}" min="1" oninput="mps[${gi}].qty=+this.value||0;render()"></td>
+      <td class="c" style="width:64px;"><input class="wni" type="number" style="width:56px;" value="${r.produced??''}" min="0" placeholder="—" title="Actual produced quantity" oninput="setProduced(${gi},this.value)"></td>
+      <td class="c" style="width:64px;">${statusCell}</td>
       <td class="c"><button class="del-btn" onclick="delBatch(${gi})">✕</button></td>
     `;
   });
-  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="7" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
+  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="9" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
 
   // ── Add-batch form + SKU master ──
   const mbLine=document.getElementById('mb-line');
