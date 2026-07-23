@@ -2416,7 +2416,8 @@ function parkBatch(gi){
   r.unalloc=true; render();
 }
 // Auto-place / level: schedule this month's un-allocated batches onto their own line's
-// earliest day that keeps the line's load absorbable by month end (no red overload).
+// earliest day with genuine free capacity (absorbable by month end). Batches that would
+// overload the line — no free capacity left this month — stay parked instead of being forced.
 function autoPlace(){
   const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
   const days=new Date(year,month+1,0).getDate();
@@ -2425,12 +2426,12 @@ function autoPlace(){
   if(!confirm(`Auto-place ${parked.length} un-allocated batch(es) onto their line's earliest free capacity?`)) return;
   const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
   const dayStr=d=>`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-  let placed=0, overloaded=0, noCap=0;
+  let placed=0, noShift=0, noFit=0;
   const byLine={}; parked.forEach(r=>{ (byLine[r.line]??=[]).push(r); });
   Object.entries(byLine).forEach(([lineName,batches])=>{
     const l=lines.find(x=>x.name===lineName);
     const cap=l?mpsDayCap(l):0;
-    if(!l||cap<=0){ noCap+=batches.length; return; } // no running capacity — leave parked
+    if(!l||cap<=0){ noShift+=batches.length; return; } // no running capacity — leave parked
     // remaining capacity per working day = day cap minus what committed batches already use (spill-aware)
     const remaining={}; for(let d=1;d<=days;d++) remaining[d]=isWork(d)?cap:0;
     const committed={};
@@ -2440,22 +2441,26 @@ function autoPlace(){
     batches.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:0); // respect intended order
     batches.forEach(r=>{
       const bl=mpsBatchLoad(r);
-      // level: earliest day that fits fully; else earliest with any spare; else earliest working day
+      // Only place if there is genuine free capacity: the earliest working day with spare,
+      // whose remaining capacity through month end can fully absorb this batch (no overload).
+      // If none, leave the batch parked — never force an overload.
       let chosen=null;
-      for(let d=1;d<=days;d++){ if(remaining[d]>=bl){ chosen=d; break; } }
-      if(chosen==null) for(let d=1;d<=days;d++){ if(remaining[d]>0){ chosen=d; break; } }
-      if(chosen==null) for(let d=1;d<=days;d++){ if(isWork(d)){ chosen=d; break; } }
-      if(chosen==null){ noCap++; return; } // no working day at all this month
+      for(let d=1;d<=days;d++){
+        if(!isWork(d)||remaining[d]<=0) continue;   // first working day with any spare
+        let tail=0; for(let k=d;k<=days;k++) tail+=remaining[k];
+        if(tail>=bl) chosen=d;                       // enough free capacity to absorb it fully
+        break;                                       // earliest spare day has the largest tail; decide here
+      }
+      if(chosen==null){ noFit++; return; }           // no free capacity — do not allocate
       r.date=dayStr(chosen); delete r.unalloc; placed++;
       let need=bl; for(let d=chosen;d<=days&&need>0;d++){ const use=Math.min(remaining[d],need); remaining[d]-=use; need-=use; }
-      if(need>0) overloaded++; // could not be fully absorbed before month end
     });
   });
   mpsResort(); render();
   const msg=[`✓ Placed ${placed} batch(es).`];
-  if(overloaded) msg.push(`${overloaded} could not fit without overloading its line (shown red) — add capacity or move them.`);
-  if(noCap) msg.push(`${noCap} left parked (their line has no running shift).`);
-  if(overloaded||noCap) alert(msg.join('\n'));
+  if(noFit) msg.push(`${noFit} left parked — not enough free capacity on their line this month.`);
+  if(noShift) msg.push(`${noShift} left parked (their line has no running shift).`);
+  if(noFit||noShift) alert(msg.join('\n'));
 }
 // Grid + tray drag & drop (delegated once on elements that survive re-renders)
 (function(){
