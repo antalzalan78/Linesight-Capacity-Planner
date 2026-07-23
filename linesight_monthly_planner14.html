@@ -338,7 +338,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <div class="card">
         <div class="section-label">Opening backlog — by product group</div>
         <p class="info-text">
-          <strong>Opening backlog</strong> = unfulfilled demand carried into this month from earlier periods, per product group.<br>
+          <strong>Opening backlog</strong> = unfulfilled demand carried into this month from earlier periods, per product group. Any <span style="color:var(--yellow);">MPS spill-over</span> (batches the previous month could not produce) is added automatically on top of the manual value.<br>
           Weekly backlog = max(0, previous backlog + demand − capacity). Free capacity in a week works the backlog down. The value next to each input shows that group's projected month-end backlog.
         </p>
         <div id="bl-open-grid"></div>
@@ -714,7 +714,7 @@ function mpsPGDem(m,k){ return mps.reduce((s,r)=>{ const sk=skuOf(r.sku); return
 function pgDem(m,k){ return demandMode==='mps'?mpsPGDem(m,k):getPGD(m,k); }
 function getBLO(m,k){ const o=blOpen[m]; return (o&&typeof o==='object')?(o[k]||0):0; }
 function setBLO(m,k,v){ if(!blOpen[m]||typeof blOpen[m]!=='object')blOpen[m]={}; blOpen[m][k]=Math.max(0,v); }
-function totBLOpen(m){ return PGS.reduce((s,g)=>s+getBLO(m,g.key),0); }
+function totBLOpen(m){ return PGS.reduce((s,g)=>s+blOpenEff(m,g.key),0); }
 
 // ════════════════════════════════
 // CALENDAR — NL holidays & maintenance days
@@ -1129,7 +1129,7 @@ function backlogSeries(m,weeks,opening){
 // PG opening backlog rolled week by week against that PG's own lines → month-end value
 function pgBacklogClose(m,weeks,gKey){
   const pgL=lines.filter(l=>l.pg===gKey);
-  let bl=getBLO(m,gKey);
+  let bl=blOpenEff(m,gKey);
   weeks.forEach((w,wi)=>{
     const cap=pgL.reduce((s,l)=>s+lWkCap(l,w,m,wi),0);
     const dem=pgL.reduce((s,l)=>s+lWkDem(l,w,m,wi,weeks),0);
@@ -1141,7 +1141,7 @@ function pgBacklogClose(m,weeks,gKey){
 // rolled week by week against the line's own capacity
 function lineBacklog(m,weeks,line){
   const pgL=lines.filter(x=>x.pg===line.pg);
-  const pgOpen=getBLO(m,line.pg);
+  const pgOpen=blOpenEff(m,line.pg);
   const pgDem=pgL.reduce((s,x)=>s+weeks.reduce((ws,w,wi)=>ws+lWkDem(x,w,m,wi,weeks),0),0);
   const pgCap=pgL.reduce((s,x)=>s+lMoCap(x,weeks,m),0);
   const moDem=weeks.reduce((s,w,wi)=>s+lWkDem(line,w,m,wi,weeks),0);
@@ -1191,6 +1191,8 @@ function renderBacklog(){
   const opening=totBLOpen(m);
 
   // ── Opening backlog input grid (per product group) ──
+  const spillIn=mpsSpillInto(m); // auto backlog carried in from the previous month's MPS spill-over
+  const totSpill=PGS.reduce((s,g)=>s+(spillIn[g.key]||0),0);
   const pgClose={};
   PGS.forEach(g=>{ pgClose[g.key]=pgBacklogClose(m,weeks,g.key); });
   const grid=document.getElementById('bl-open-grid');
@@ -1198,21 +1200,22 @@ function renderBacklog(){
     grid.innerHTML='';
     PGS.forEach(g=>{
       const val=getBLO(m,g.key);
+      const sp=spillIn[g.key]||0;
       const cls=pgClose[g.key];
       const hasLines=lines.some(l=>l.pg===g.key);
       const row=document.createElement('div'); row.className='pg-demand-row';
       row.innerHTML=`
-        <div class="pg-name"><span class="pg-dot" style="background:${g.color};"></span>${g.label}</div>
-        <input class="numi" type="number" value="${val}" min="0" max="99999999"
+        <div class="pg-name"><span class="pg-dot" style="background:${g.color};"></span>${g.label}${sp>0?`<br><span style="font-size:9px;color:var(--yellow);" title="Automatically carried from last month's MPS spill-over">+${hu(sp)} MPS spill</span>`:''}</div>
+        <input class="numi" type="number" value="${val}" min="0" max="99999999" title="Manual opening backlog${sp>0?` (plus ${hu(sp)} auto from MPS = ${hu(val+sp)})`:''}"
           oninput="setBLO('${m}','${g.key}',+this.value||0);render()">
-        <div class="pg-stat" style="color:${!hasLines&&val>0?'var(--yellow)':cls>0?'var(--red)':'var(--text2)'};">
-          ${!hasLines&&val>0?'no line':'→ '+hu(cls)}
+        <div class="pg-stat" style="color:${!hasLines&&(val+sp)>0?'var(--yellow)':cls>0?'var(--red)':'var(--text2)'};">
+          ${!hasLines&&(val+sp)>0?'no line':'→ '+hu(cls)}
         </div>
       `;
       grid.appendChild(row);
     });
   }
-  document.getElementById('bl-open-total').textContent=hu(opening)+' units';
+  document.getElementById('bl-open-total').textContent=hu(opening)+' units'+(totSpill>0?` · incl. ${hu(totSpill)} MPS spill`:'');
 
   const series=backlogSeries(m,weeks,opening);
   const closing=series.length?series[series.length-1].bl:opening;
@@ -1967,7 +1970,7 @@ function exportCSV(){
     const series=backlogSeries(m,weeks,opening);
     rows.push(['OPENING BACKLOG BY PRODUCT GROUP']);
     rows.push(['Product group','Opening backlog','Month-end backlog']);
-    PGS.forEach(g=>{ rows.push([g.label,getBLO(m,g.key),pgBacklogClose(m,weeks,g.key)]); });
+    PGS.forEach(g=>{ rows.push([g.label,blOpenEff(m,g.key),pgBacklogClose(m,weeks,g.key)]); });
     rows.push(['TOTAL',opening,series.length?series[series.length-1].bl:opening]);
     rows.push([]);
     rows.push(['WEEKLY BACKLOG WATERFALL']);
@@ -2151,6 +2154,40 @@ function mpsBatchLoad(r){
   return r.qty;
 }
 function mpsDayCap(l){ const p=getP(), base=Math.round(p.oee*100); return mpsIsMin()?Math.round(nActiveShifts(l)*p.shiftlen*60*((l.oee??base)/100)):Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*nActiveShifts(l)); }
+// ── Cross-month spill: units of scheduled batches that cannot be produced within month m, per product group ──
+// (the month-end carry that never clears becomes the next month's backlog)
+function mpsMonthShortfall(m){
+  const [y,mo]=m.split('-').map(Number);
+  const days=new Date(y,mo+1,0).getDate();
+  const isWork=d=>{const dt=new Date(y,mo,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
+  const out={};
+  lines.forEach(l=>{
+    const rows=mps.filter(r=>!r.unalloc&&r.line===l.name&&mkOfDate(r.date)===m);
+    if(!rows.length) return;
+    const cap=mpsDayCap(l);
+    const loadByDay={}; rows.forEach(r=>{ const d=+r.date.split('-')[2]; loadByDay[d]=(loadByDay[d]||0)+mpsBatchLoad(r); });
+    let carry=0; for(let d=1;d<=days;d++){ carry=Math.max(0, carry+(loadByDay[d]||0)-(isWork(d)?cap:0)); }
+    if(carry<=0) return; // everything fits this month
+    const totLoad=Object.values(loadByDay).reduce((s,v)=>s+v,0);
+    const shortUnits=totLoad>0?rows.reduce((s,r)=>s+r.qty,0)*(carry/totLoad):0; // basis-shortfall → units
+    const pgUnits={}; rows.forEach(r=>{ const sk=skuOf(r.sku); if(sk&&sk.pg) pgUnits[sk.pg]=(pgUnits[sk.pg]||0)+r.qty; });
+    const pgTot=Object.values(pgUnits).reduce((s,v)=>s+v,0);
+    if(pgTot<=0) return; // unassigned SKUs — cannot attribute to a product group
+    Object.entries(pgUnits).forEach(([k,u])=>{ out[k]=(out[k]||0)+Math.round(shortUnits*u/pgTot); });
+  });
+  return out;
+}
+let _spillMemo={key:null,val:null};
+// Per-PG units spilling INTO month m from the previous month's MPS shortfall (memoised per render)
+function mpsSpillInto(m){
+  if(_spillMemo.key===m) return _spillMemo.val;
+  const [y,mo]=m.split('-').map(Number);
+  const val=mpsMonthShortfall(`${mo===0?y-1:y}-${mo===0?11:mo-1}`);
+  _spillMemo={key:m,val};
+  return val;
+}
+// Effective opening backlog for a PG = manual entry + auto MPS spill-in from the previous month
+function blOpenEff(m,k){ return getBLO(m,k)+(mpsSpillInto(m)[k]||0); }
 function normLine(v){
   const raw=String(v||'').trim();
   if(lineAlias[raw]) return lineAlias[raw];
@@ -2556,6 +2593,8 @@ function renderMPS(){
   const totProduced=allMonth.reduce((s,r)=>s+(r.produced||0),0);
   const adh=totPlannedAll>0?Math.round(totProduced/totPlannedAll*100):0;
   const adhCls=adh>=95?'ok':adh>=80?'warn':'danger';
+  // units of this month's scheduled batches that cannot be produced within the month → next month's backlog
+  const shortMap=mpsMonthShortfall(m); const monthSpill=Object.values(shortMap).reduce((s,v)=>s+v,0);
   document.getElementById('mps-strip').innerHTML=`
     <div class="metric"><div class="metric-label">Batches this month</div><div class="metric-val">${monthRows.length}</div><div class="metric-sub">${[...new Set(monthRows.map(r=>r.sku))].length} SKUs${hasAdh?` · ${doneRows.length} done`:''}</div></div>
     <div class="metric"><div class="metric-label">Planned quantity</div><div class="metric-val">${hu(totQty)}</div><div class="metric-sub">units</div></div>
@@ -2565,6 +2604,7 @@ function renderMPS(){
     <div class="metric"><div class="metric-label">Unassigned SKUs</div><div class="metric-val ${unSkus?'warn':'ok'}">${unSkus}</div><div class="metric-sub">no product group</div></div>
     <div class="metric"><div class="metric-label">Un-allocated</div><div class="metric-val ${parkRows.length?'warn':'ok'}">${parkRows.length}</div><div class="metric-sub">${parkRows.length?hu(parkRows.reduce((s,r)=>s+r.qty,0))+' units parked':'all scheduled'}</div></div>
     <div class="metric"><div class="metric-label">Changeovers</div><div class="metric-val ${totalCO?'warn':'ok'}">${totalCO}</div><div class="metric-sub">SKU changes in sequence</div></div>
+    <div class="metric"><div class="metric-label">Spill to backlog</div><div class="metric-val ${monthSpill>0?'danger':'ok'}">${hu(monthSpill)}</div><div class="metric-sub">units rolling to next month</div></div>
   `;
 
   // ── Daily line×day grid ──
@@ -3080,6 +3120,7 @@ function load(){
 }
 
 function render(){
+  _spillMemo.key=null; // recompute cross-month MPS spill for this pass
   document.getElementById('month-label').textContent=`${MN[curDate.getMonth()]} ${curDate.getFullYear()}`;
   renderMetrics();
   renderLines();
