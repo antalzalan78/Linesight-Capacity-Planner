@@ -72,6 +72,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .mps-tray-chip:active{cursor:grabbing;}
 .mps-tray-chip .tc-x{border:none;background:none;color:var(--text2);cursor:pointer;font-size:11px;padding:0 0 0 2px;line-height:1;}
 .mps-tray-chip .tc-x:hover{color:var(--red);}
+#mps-tray{margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;}
+#mps-tray.tray-has{border-color:var(--red);background:rgba(226,75,74,0.06);}
 #mps-tray.tray-over{background:rgba(29,158,117,0.1);border-color:var(--green);}
 #lines-table .ni, #lines-table .numi{font-size:12px;padding:4px 4px;}
 #lines-table .si{font-size:10px;padding:4px 3px;}
@@ -265,7 +267,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
     <div class="section-label" style="margin:14px 0 6px;">Weekly load by line <span style="text-transform:none;letter-spacing:0;color:var(--text2);">— booked load vs. available capacity per week</span></div>
     <div style="overflow-x:auto;"><table class="gt" id="mps-week-table"></table></div>
-    <div id="mps-tray" style="margin-top:12px;border:1px dashed var(--border);border-radius:7px;padding:8px 10px;min-height:46px;transition:background .12s,border-color .12s;">
+    <div id="mps-tray">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;">
         <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;">Un-allocated batches <span style="text-transform:none;letter-spacing:0;">— drag a batch chip here to park it, or drag a parked chip onto a day/line to schedule it</span></div>
         <button id="mps-autoplace" onclick="autoPlace()" title="Schedule all parked batches onto their line's earliest free capacity, avoiding overload" style="display:none;flex-shrink:0;font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:5px;border:.5px solid var(--green);background:var(--green-bg);color:var(--green-l);cursor:pointer;">⚡ Auto-place</button>
@@ -2674,6 +2676,7 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(
 
   // ── Un-allocated tray ──
   document.getElementById('mps-autoplace').style.display=parkRows.length?'inline-block':'none';
+  document.getElementById('mps-tray').classList.toggle('tray-has',parkRows.length>0);
   const tray=document.getElementById('mps-tray-list');
   tray.innerHTML=parkRows.length?parkRows.map(r=>{
     const gi=mps.indexOf(r), s=skuOf(r.sku), c=s&&s.pg?pg(s.pg).color:'var(--text2)';
