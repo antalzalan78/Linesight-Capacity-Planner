@@ -711,7 +711,9 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <button class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="applySyncSettings()">✓ Save settings</button>
       <button class="add-btn" style="margin-top:0;" onclick="cloudPull(false)">⬇ Pull from cloud</button>
       <button class="add-btn" style="margin-top:0;" onclick="cloudPush()">⬆ Push to cloud</button>
+      <button class="add-btn" style="margin-top:0;" onclick="cloudDiagnose()" title="Check what the cloud actually contains for this account and plan name">🔍 Diagnose</button>
     </div>
+    <div id="sync-diag" style="margin-top:10px;font-size:11px;line-height:1.6;"></div>
     <div class="divider"></div>
     <details style="font-size:11px;color:var(--text2);">
       <summary style="cursor:pointer;margin-bottom:8px;">Secure Supabase setup — click to expand</summary>
@@ -3538,6 +3540,34 @@ async function cloudPush(){
     setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
   }
 }
+// Read-only check of what the cloud holds for this account and plan name
+async function cloudDiagnose(){
+  const el=document.getElementById('sync-diag');
+  const line=(txt,col)=>`<div style="color:${col||'var(--text2)'};">${txt}</div>`;
+  const plan=syncCfg.plan||'default';
+  if(!syncReady()){ el.innerHTML=line('✕ No Supabase URL or key saved yet.','var(--red)'); return; }
+  if(!authUser){ el.innerHTML=line('✕ Not signed in — the cloud rejects every request until you sign in.','var(--red)'); return; }
+  el.innerHTML=line('Checking…');
+  try{
+    const res=await fetch(syncBase()+'?select=id,owner_id,updated_at&order=updated_at.desc',{headers:syncHdrs()});
+    if(!res.ok) throw new Error(syncErr(res.status,await res.text()));
+    const rows=await res.json();
+    const mine=rows.filter(r=>r.owner_id===authUser.id);
+    const hit=mine.find(r=>r.id===plan);
+    let out=line(`Signed in as <strong style="color:var(--text);">${authUser.email}</strong>`)
+           +line(`Your user id: <span style="font-family:var(--mono);">${authUser.id}</span>`)
+           +line(`Plan name in settings: <strong style="color:var(--text);">${plan}</strong>`)
+           +line(`Plans visible to you: ${mine.length}${mine.length?' — '+mine.map(r=>r.id).join(', '):''}`);
+    if(hit){
+      out+=line(`✓ "${plan}" exists and belongs to you (updated ${new Date(hit.updated_at).toLocaleString('en-GB')}). Push and pull should work.`,'var(--green-l)');
+    } else {
+      out+=line(`No plan named "${plan}" belongs to you.`,'var(--yellow)')
+          +line(`If pushing still fails with a row-level security error, a row with this name exists under another owner (or with no owner) and is hidden from you. Either pick a different plan name above and save, or claim the row in the Supabase SQL Editor:`,'var(--yellow)')
+          +`<div style="font-family:var(--mono);font-size:10px;background:var(--bg3);border-radius:5px;padding:6px 8px;margin-top:4px;color:var(--text);">update public.plans set owner_id = '${authUser.id}' where id = '${plan}';</div>`;
+    }
+    el.innerHTML=out;
+  }catch(e){ el.innerHTML=line('✕ '+e.message,'var(--red)'); }
+}
 // Turn raw PostgREST/RLS errors into something actionable
 function syncErr(status,body){
   const plan=syncCfg.plan||'default';
@@ -3573,6 +3603,7 @@ function openSync(){
   document.getElementById('sy-key').value=syncCfg.key;
   document.getElementById('sy-plan').value=syncCfg.plan||'default';
   document.getElementById('sy-on').checked=!!syncCfg.enabled;
+  document.getElementById('sync-diag').innerHTML='';
   document.getElementById('sync-modal').style.display='flex';
 }
 function closeSync(){ document.getElementById('sync-modal').style.display='none'; }
