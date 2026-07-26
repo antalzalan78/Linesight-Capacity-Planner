@@ -3532,11 +3532,22 @@ async function cloudPush(){
         updated_at:new Date().toISOString()
       }])
     });
-    if(!res.ok) throw new Error('HTTP '+res.status+' — '+(await res.text()).slice(0,180));
+    if(!res.ok) throw new Error(syncErr(res.status,await res.text()));
     setSyncStatus('☁ synced '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),'var(--green)');
   }catch(e){
     setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
   }
+}
+// Turn raw PostgREST/RLS errors into something actionable
+function syncErr(status,body){
+  const plan=syncCfg.plan||'default';
+  if(status===403&&/row-level security/i.test(body))
+    return `plan "${plan}" already exists in the cloud under a different owner (or with no owner). Assign it to your user in Supabase SQL Editor: update public.plans set owner_id = '${authUser?.id||'YOUR-UUID'}' where id = '${plan}' and owner_id is null;`;
+  if(status===401)
+    return 'the session expired or the key is wrong — sign in again.';
+  if(status===404)
+    return 'the plans table was not found — run supabase/secure_auth_migration.sql in the SQL Editor.';
+  return 'HTTP '+status+' — '+String(body).slice(0,180);
 }
 async function cloudPull(silent){
   if(!syncReady()){ if(!silent) alert('Set the Supabase URL and anon key first (☁ Sync).'); return; }
@@ -3544,7 +3555,7 @@ async function cloudPull(silent){
   try{
     setSyncStatus('☁ loading…');
     const res=await fetch(syncBase()+'?id=eq.'+encodeURIComponent(syncCfg.plan||'default')+'&select=data,updated_at',{headers:syncHdrs()});
-    if(!res.ok) throw new Error('HTTP '+res.status+' — '+(await res.text()).slice(0,180));
+    if(!res.ok) throw new Error(syncErr(res.status,await res.text()));
     const rows=await res.json();
     if(rows.length&&rows[0].data){
       applyFullState(rows[0].data);
