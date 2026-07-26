@@ -633,12 +633,19 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     </div>
 
     <div id="auth-email-view">
-      <p class="info-text">Sign in to access your secure cloud plan. We will send a secure one-time sign-in link to your email address.</p>
+      <p class="info-text">Sign in to access your secure cloud plan.</p>
       <div class="param-row">
         <div class="param-label-row"><span class="param-label">Email address</span></div>
-        <input type="email" id="auth-email" class="ni" placeholder="name@company.com" autocomplete="email" onkeydown="if(event.key==='Enter')sendAuthCode()">
+        <input type="email" id="auth-email" class="ni" placeholder="name@company.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('auth-password').focus()">
       </div>
-      <button id="auth-send-btn" class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="sendAuthCode()">Send sign-in link</button>
+      <div class="param-row">
+        <div class="param-label-row"><span class="param-label">Password</span></div>
+        <input type="password" id="auth-password" class="ni" placeholder="Your account password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signInPassword()">
+      </div>
+      <button id="auth-pw-btn" class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="signInPassword()">Sign in</button>
+      <div class="divider"></div>
+      <p class="info-text" style="margin-bottom:8px;">No password set? Create the user with a password in Supabase → Authentication → Users, or use a one-time email link instead (the built-in Supabase mailer allows only a few emails per hour).</p>
+      <button id="auth-send-btn" class="add-btn" style="margin-top:0;" onclick="sendAuthCode()">Email me a sign-in link</button>
     </div>
 
     <div id="auth-code-view" style="display:none;">
@@ -3399,6 +3406,7 @@ function openAuth(){
   document.getElementById('auth-code-view').style.display='none';
   document.getElementById('auth-user-view').style.display=authUser?'block':'none';
   document.getElementById('auth-user-email').textContent=authUser?.email||'';
+  document.getElementById('auth-password').value=''; // never keep a typed password around
   authMsg('');
   document.getElementById('auth-modal').style.display='flex';
   if(configured&&!authUser) setTimeout(()=>document.getElementById('auth-email').focus(),50);
@@ -3408,6 +3416,32 @@ function showAuthEmail(){
   document.getElementById('auth-email-view').style.display='block';
   document.getElementById('auth-code-view').style.display='none';
   authMsg('');
+}
+// Password sign-in: no email is sent, so it is not affected by the mailer rate limit
+async function signInPassword(){
+  const email=document.getElementById('auth-email').value.trim().toLowerCase();
+  const pwField=document.getElementById('auth-password');
+  const password=pwField.value;
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ authMsg('Enter a valid email address.','var(--red)'); return; }
+  if(!password){ authMsg('Enter the password for this account.','var(--red)'); pwField.focus(); return; }
+  if(!await initAuth()){ authMsg('Configure the Supabase connection first.','var(--red)'); return; }
+  const btn=document.getElementById('auth-pw-btn'); btn.disabled=true; btn.textContent='Signing in…';
+  try{
+    const {data,error}=await sbClient.auth.signInWithPassword({email,password});
+    if(error) throw error;
+    pwField.value='';
+    setAuthSession(data?.session||null,true);
+    authMsg('Signed in.','var(--green-l)');
+    closeAuth();
+  }catch(e){
+    const m=/invalid login credentials/i.test(e.message)
+      ? 'Wrong email or password. Set a password for this user in Supabase → Authentication → Users.'
+      : /email not confirmed/i.test(e.message)
+      ? 'This user is not confirmed yet. Confirm it in Supabase → Authentication → Users.'
+      : e.message;
+    authMsg('Could not sign in: '+m,'var(--red)');
+  }
+  finally{ btn.disabled=false; btn.textContent='Sign in'; }
 }
 async function sendAuthCode(){
   const email=document.getElementById('auth-email').value.trim().toLowerCase();
@@ -3423,8 +3457,13 @@ async function sendAuthCode(){
     document.getElementById('auth-email-view').style.display='none';
     document.getElementById('auth-code-view').style.display='block';
     authMsg('Sign-in link sent. Keep this page open or return after clicking the link in the email.','var(--green-l)');
-  }catch(e){ authMsg('Could not send the sign-in link: '+e.message,'var(--red)'); }
-  finally{ btn.disabled=false; btn.textContent='Send sign-in link'; }
+  }catch(e){
+    const m=/rate limit/i.test(e.message)
+      ? 'the built-in Supabase mailer allows only a few emails per hour. Wait about an hour, or sign in with a password instead (no email needed).'
+      : e.message;
+    authMsg('Could not send the sign-in link: '+m,'var(--red)');
+  }
+  finally{ btn.disabled=false; btn.textContent='Email me a sign-in link'; }
 }
 async function signOutUser(){
   if(sbClient) await sbClient.auth.signOut();
