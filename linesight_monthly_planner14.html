@@ -116,7 +116,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .legend-dot{width:10px;height:10px;border-radius:2px;display:inline-block;}
 .view-panel{display:none;}
 .view-panel.active{display:block;}
-.footer{margin-top:2rem;padding-top:1rem;border-top:.5px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--text2);display:flex;justify-content:space-between;}
+.footer{margin-top:2rem;padding-top:1rem;border-top:.5px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--text2);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
 .divider{height:.5px;background:var(--border);margin:1rem 0;}
 .info-text{font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:1rem;}
 /* ── Printable report ── */
@@ -578,6 +578,22 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 
 <div id="report-view"></div>
 
+<!-- ══ PLAN HISTORY MODAL ══ -->
+<div id="history-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:110;align-items:center;justify-content:center;">
+  <div class="card" style="width:560px;max-width:92vw;max-height:88vh;overflow-y:auto;margin:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+      <div class="section-label" style="margin-bottom:0;">Plan versions</div>
+      <button onclick="closeHistory()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;padding:2px 6px;">✕</button>
+    </div>
+    <p class="info-text">Save named checkpoints before major planning changes. Versions are stored locally in this browser and can be restored at any time.</p>
+    <div style="display:flex;gap:8px;margin-bottom:1rem;">
+      <input type="text" id="version-name" class="ni" placeholder="Version name (optional)">
+      <button class="add-btn" style="margin-top:0;flex-shrink:0;border-color:var(--green);color:var(--green);" onclick="savePlanVersion()">+ Save current</button>
+    </div>
+    <div id="version-list"></div>
+  </div>
+</div>
+
 <!-- ══ CLOUD SYNC MODAL ══ -->
 <div id="sync-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100;align-items:center;justify-content:center;">
   <div class="card" style="width:520px;max-width:92vw;max-height:88vh;overflow-y:auto;margin:0;">
@@ -634,7 +650,9 @@ create policy "open access" on plans
 
 <div class="footer">
   <span>LineSight — Monthly Capacity Planner <span id="save-indicator" style="color:var(--green);font-size:10px;margin-left:8px;opacity:0;transition:opacity .5s;">✓ saved</span><span id="sync-status" style="font-size:10px;margin-left:8px;color:var(--text2);"></span></span>
-  <div style="display:flex;align-items:center;gap:8px;">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <button onclick="undoPlan()" id="undo-btn" disabled title="No change to undo" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:not-allowed;opacity:.45;transition:all .15s;">↶ Undo</button>
+    <button onclick="openHistory()" title="Save or restore local plan versions" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">◷ Versions</button>
     <button onclick="openSync()" title="Shared cloud storage for the plan (Supabase)" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">☁ Sync</button>
     <button onclick="printReport()" title="Print / save a one-page monthly report as PDF" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">🖨 Report</button>
     <button onclick="exportCSV()" title="Export the active tab's data for the selected month" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">⬇ Export CSV</button>
@@ -685,6 +703,11 @@ let demandMode = 'pg'; // 'pg' | 'rate'
 let curDate    = new Date(); curDate.setDate(1);
 let charts     = {};
 let activeTab  = 'weekly';
+let undoStack  = [];   // recent full-plan states; kept in memory for this session
+let planVersions = []; // named local checkpoints: [{id,name,ts,state}]
+let lastPlanState = null;
+let lastHistoryAt = 0;
+let suppressHistory = false;
 
 // ════════════════════════════════
 // HELPERS
@@ -2040,6 +2063,7 @@ function exportCSV(){
 function snapshotState(){
   return JSON.parse(JSON.stringify({
     lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, demandMode,
+    mpsBasis, mpsSetupDef, rcDeadline,
     sliders:{
       shifts:  document.getElementById('shifts').value,
       shiftlen:document.getElementById('shiftlen').value,
@@ -2055,6 +2079,9 @@ function applyState(s){
   wfOvr=s.wfOvr||{};
   skus=s.skus||[]; mps=s.mps||[]; lineAlias=s.lineAlias||{};
   demandMode=s.demandMode||'pg';
+  mpsBasis=s.mpsBasis||'units';
+  mpsSetupDef=s.mpsSetupDef||0;
+  rcDeadline=s.rcDeadline||null;
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     if(s.sliders&&s.sliders[id]!==undefined) document.getElementById(id).value=s.sliders[id];
   });
@@ -2962,6 +2989,120 @@ function printReport(){
 }
 
 // ════════════════════════════════
+// UNDO & LOCAL PLAN VERSIONS
+// ════════════════════════════════
+function updateUndoButton(){
+  const btn=document.getElementById('undo-btn');
+  if(!btn) return;
+  const ready=undoStack.length>0;
+  btn.disabled=!ready;
+  btn.style.cursor=ready?'pointer':'not-allowed';
+  btn.style.opacity=ready?'1':'.45';
+  btn.style.color=ready?'var(--text)':'var(--text2)';
+  btn.title=ready?`Undo last planning change (${undoStack.length} available)`:'No change to undo';
+}
+function pushUndoState(state){
+  const json=JSON.stringify(state);
+  if(undoStack.length&&JSON.stringify(undoStack[undoStack.length-1])===json) return;
+  undoStack.push(JSON.parse(json));
+  if(undoStack.length>30) undoStack.shift();
+  updateUndoButton();
+}
+function captureUndoHistory(){
+  const current=JSON.stringify(fullState());
+  if(lastPlanState!==null&&current!==lastPlanState&&!suppressHistory){
+    const now=Date.now();
+    // Group rapid slider movement and typing into one useful undo step.
+    if(now-lastHistoryAt>700) pushUndoState(JSON.parse(lastPlanState));
+    lastHistoryAt=now;
+  }
+  lastPlanState=current;
+  updateUndoButton();
+}
+function undoPlan(){
+  if(!undoStack.length) return;
+  const previous=undoStack.pop();
+  suppressHistory=true;
+  try{
+    applyFullState(JSON.parse(JSON.stringify(previous)));
+    lastPlanState=JSON.stringify(fullState());
+  } finally { suppressHistory=false; }
+  updateUndoButton();
+}
+function persistVersions(){
+  try{ localStorage.setItem('ls_plan_versions',JSON.stringify(planVersions.slice(0,20))); }catch(e){}
+}
+function loadVersions(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('ls_plan_versions')||'[]');
+    if(Array.isArray(saved)) planVersions=saved.slice(0,20);
+  }catch(e){ planVersions=[]; }
+}
+function openHistory(){
+  renderVersionList();
+  document.getElementById('history-modal').style.display='flex';
+}
+function closeHistory(){ document.getElementById('history-modal').style.display='none'; }
+function savePlanVersion(){
+  const inp=document.getElementById('version-name');
+  const now=new Date();
+  const name=inp.value.trim()||`Plan ${now.toLocaleDateString('en-GB')} ${now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
+  planVersions.unshift({id:Date.now(),name,ts:Date.now(),state:fullState()});
+  planVersions=planVersions.slice(0,20);
+  inp.value='';
+  persistVersions();
+  renderVersionList();
+}
+function restorePlanVersion(i){
+  const v=planVersions[i];
+  if(!v||!confirm(`Restore "${v.name}"? The current plan will be replaced, but can still be recovered with Undo.`)) return;
+  pushUndoState(fullState());
+  suppressHistory=true;
+  try{
+    applyFullState(JSON.parse(JSON.stringify(v.state)));
+    lastPlanState=JSON.stringify(fullState());
+  } finally { suppressHistory=false; }
+  closeHistory();
+  updateUndoButton();
+}
+function deletePlanVersion(i){
+  const v=planVersions[i];
+  if(!v||!confirm(`Delete saved version "${v.name}"?`)) return;
+  planVersions.splice(i,1);
+  persistVersions();
+  renderVersionList();
+}
+function renderVersionList(){
+  const list=document.getElementById('version-list');
+  if(!list) return;
+  list.innerHTML='';
+  if(!planVersions.length){
+    list.innerHTML='<div class="info-text" style="margin:0;">No saved plan versions yet.</div>';
+    return;
+  }
+  planVersions.forEach((v,i)=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:.5px solid var(--border);';
+    const info=document.createElement('div'); info.style.flex='1';
+    const name=document.createElement('div'); name.style.cssText='font-size:12px;color:var(--text);'; name.textContent=v.name;
+    const ts=document.createElement('div'); ts.style.cssText='font-family:var(--mono);font-size:9px;color:var(--text2);margin-top:2px;';
+    ts.textContent=new Date(v.ts).toLocaleString('en-GB');
+    info.append(name,ts);
+    const restore=document.createElement('button'); restore.className='add-btn'; restore.style.cssText='margin:0;padding:4px 9px;';
+    restore.textContent='↩ Restore'; restore.onclick=()=>restorePlanVersion(i);
+    const del=document.createElement('button'); del.className='del-btn'; del.title='Delete version'; del.textContent='✕'; del.onclick=()=>deletePlanVersion(i);
+    row.append(info,restore,del); list.appendChild(row);
+  });
+}
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.shiftKey){
+    const tag=document.activeElement?.tagName;
+    if(tag==='INPUT'||tag==='TEXTAREA'||document.activeElement?.isContentEditable) return;
+    e.preventDefault(); undoPlan();
+  }
+});
+
+// ════════════════════════════════
 // CLOUD SYNC  (Supabase REST — plans table, one jsonb row per plan)
 // ════════════════════════════════
 let syncCfg={url:'',key:'',plan:'default',enabled:false};
@@ -3069,6 +3210,7 @@ function applySyncSettings(){
 // MASTER RENDER
 // ════════════════════════════════
 function save(){
+  captureUndoHistory();
   try{
     localStorage.setItem('ls_planner', JSON.stringify({
       lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, mpsBasis, mpsSetupDef, rcDeadline, scenarios,
@@ -3198,6 +3340,7 @@ document.getElementById('days').addEventListener('input',function(){
 })();
 
 document.getElementById('footer-date').textContent=new Date().toLocaleDateString('en-GB');
+loadVersions();
 load();
 render();
 if(syncCfg.enabled) cloudPull(true);
