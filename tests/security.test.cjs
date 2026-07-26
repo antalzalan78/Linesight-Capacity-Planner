@@ -13,6 +13,13 @@ test('cloud requests use the signed-in session token and owner id',()=>{
   assert.match(html,/if\(!authUser\)/);
 });
 
+test('email authentication uses the default sign-in link flow',()=>{
+  assert.match(html,/Send sign-in link/);
+  assert.match(html,/detectSessionInUrl:true/);
+  assert.doesNotMatch(html,/id="auth-code"/);
+  assert.doesNotMatch(html,/Verify and sign in/);
+});
+
 test('legacy open-access policy is removed from the planner instructions',()=>{
   assert.doesNotMatch(html,/create policy "open access"/i);
 });

@@ -2,7 +2,7 @@
 
 1. In Supabase Authentication, enable the Email provider.
 2. Add `https://antalzalan78.github.io/Linesight-Capacity-Planner/` to the allowed redirect URLs.
-3. Configure the email template to include the one-time token if you want the six-digit code flow. A magic link is also supported by the planner session listener.
+3. Keep the default Supabase confirmation/sign-in email. LineSight uses the link in that email and does not require a six-digit code.
 4. Run `secure_auth_migration.sql` in the Supabase SQL Editor.
 5. In Project Settings → API, copy only the Project URL and publishable key into the planner's Sync settings.
 6. Sign in to LineSight once.

@@ -633,22 +633,25 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     </div>
 
     <div id="auth-email-view">
-      <p class="info-text">Sign in to access your secure cloud plan. We will send a one-time verification code to your email address.</p>
+      <p class="info-text">Sign in to access your secure cloud plan. We will send a secure one-time sign-in link to your email address.</p>
       <div class="param-row">
         <div class="param-label-row"><span class="param-label">Email address</span></div>
         <input type="email" id="auth-email" class="ni" placeholder="name@company.com" autocomplete="email" onkeydown="if(event.key==='Enter')sendAuthCode()">
       </div>
-      <button id="auth-send-btn" class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="sendAuthCode()">Send verification code</button>
+      <button id="auth-send-btn" class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="sendAuthCode()">Send sign-in link</button>
     </div>
 
     <div id="auth-code-view" style="display:none;">
-      <p class="info-text">Enter the six-digit code sent to <strong id="auth-email-label" style="color:var(--text);"></strong>.</p>
-      <div class="param-row">
-        <div class="param-label-row"><span class="param-label">Verification code</span></div>
-        <input type="text" inputmode="numeric" maxlength="6" id="auth-code" class="ni" placeholder="000000" autocomplete="one-time-code" style="font-family:var(--mono);font-size:20px;letter-spacing:.3em;text-align:center;" onkeydown="if(event.key==='Enter')verifyAuthCode()">
+      <div style="padding:12px;border:.5px solid var(--green);border-radius:7px;background:var(--green-bg);margin-bottom:1rem;">
+        <div style="font-family:var(--mono);font-size:12px;color:var(--green-l);margin-bottom:6px;">✉ Check your email</div>
+        <p style="font-size:12px;line-height:1.6;color:var(--text2);">
+          We sent a secure sign-in link to<br>
+          <strong id="auth-email-label" style="color:var(--text);"></strong>
+        </p>
       </div>
+      <p class="info-text">Open the email and click <strong>Confirm email address</strong> or <strong>Sign in</strong>. You will be returned to LineSight and signed in automatically.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button id="auth-verify-btn" class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="verifyAuthCode()">Verify and sign in</button>
+        <button class="add-btn" style="margin-top:0;" onclick="sendAuthCode()">Resend link</button>
         <button class="add-btn" style="margin-top:0;" onclick="showAuthEmail()">Use another email</button>
       </div>
     </div>
@@ -3419,25 +3422,9 @@ async function sendAuthCode(){
     document.getElementById('auth-email-label').textContent=email;
     document.getElementById('auth-email-view').style.display='none';
     document.getElementById('auth-code-view').style.display='block';
-    authMsg('Code sent. You can also use the sign-in link in the email.','var(--green-l)');
-    setTimeout(()=>document.getElementById('auth-code').focus(),50);
-  }catch(e){ authMsg('Could not send the code: '+e.message,'var(--red)'); }
-  finally{ btn.disabled=false; btn.textContent='Send verification code'; }
-}
-async function verifyAuthCode(){
-  const token=document.getElementById('auth-code').value.replace(/\D/g,'');
-  if(token.length!==6){ authMsg('Enter the six-digit verification code.','var(--red)'); return; }
-  const btn=document.getElementById('auth-verify-btn'); btn.disabled=true; btn.textContent='Verifying…';
-  try{
-    const {data,error}=await sbClient.auth.verifyOtp({email:pendingAuthEmail,token,type:'email'});
-    if(error) throw error;
-    setAuthSession(data.session,true);
-    document.getElementById('auth-user-email').textContent=data.user?.email||pendingAuthEmail;
-    document.getElementById('auth-code-view').style.display='none';
-    document.getElementById('auth-user-view').style.display='block';
-    authMsg('Signed in successfully.','var(--green-l)');
-  }catch(e){ authMsg('Sign-in failed: '+e.message,'var(--red)'); }
-  finally{ btn.disabled=false; btn.textContent='Verify and sign in'; }
+    authMsg('Sign-in link sent. Keep this page open or return after clicking the link in the email.','var(--green-l)');
+  }catch(e){ authMsg('Could not send the sign-in link: '+e.message,'var(--red)'); }
+  finally{ btn.disabled=false; btn.textContent='Send sign-in link'; }
 }
 async function signOutUser(){
   if(sbClient) await sbClient.auth.signOut();
