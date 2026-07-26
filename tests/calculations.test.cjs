@@ -66,6 +66,26 @@ test('basis shortfall converts proportionally back to units and product groups',
   });
 });
 
+test('production completions aggregate by job and transaction date',()=>{
+  assert.deepEqual(calc.aggregateCompletions([
+    {job:'1100449',date:'2024-12-20',qty:399},
+    {job:'1100449',date:'2024-12-20',qty:399},
+    {job:'1100449',date:'2024-12-20',qty:399},
+    {job:'1100449',date:'2024-12-21',qty:50},
+    {job:'',date:'2024-12-20',qty:1405},
+  ]),[
+    {job:'1100449',date:'2024-12-20',qty:1197,rows:3},
+    {job:'1100449',date:'2024-12-21',qty:50,rows:1},
+  ]);
+});
+
+test('plan adherence is capped at planned quantity per batch',()=>{
+  assert.equal(calc.cappedAdherence([
+    {qty:100,produced:120},
+    {qty:100,produced:50},
+  ]),75);
+});
+
 test('planner loads the calculation module before the application script',()=>{
   const html=fs.readFileSync(path.join(__dirname,'..','linesight_monthly_planner14.html'),'utf8');
   const moduleAt=html.indexOf('<script src="./src/calculations.js"></script>');

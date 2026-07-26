@@ -319,6 +319,13 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <div id="mps-preview" style="margin-top:10px;"></div>
     </div>
     <div class="card">
+      <div class="section-label">Production Completion import</div>
+      <p class="info-text">Load the daily NetSuite Production Completion export. Completion rows are summed by <strong>Job + Transaction Date</strong> and matched to the MPS by Job no. Re-importing the same day replaces that day's total, so quantities are not duplicated.</p>
+      <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('completion-file').click()">⬆ Choose NetSuite Excel/CSV…</button>
+      <input type="file" id="completion-file" accept=".xlsx,.xlsm,.xls,.csv" style="display:none" onchange="completionFile(this.files[0]);this.value=''">
+      <div id="completion-preview" style="margin-top:10px;"></div>
+    </div>
+    <div class="card">
       <div class="section-label">SKU master</div>
       <p class="info-text">Assign each SKU to a product group — this connects the batch plan to the capacity model. Unknown SKUs from an import land here unassigned.</p>
       <div id="sku-list"></div>
@@ -1854,8 +1861,7 @@ function monthKPI(d){
   }
   const rows=mps.filter(r=>mkOfDate(r.date)===m);
   const planned=rows.reduce((s,r)=>s+r.qty,0);
-  const produced=rows.reduce((s,r)=>s+(r.produced||0),0);
-  const adherence=(planned>0&&rows.some(r=>r.produced>0||r.status))?Math.round(produced/planned*100):null;
+  const adherence=(planned>0&&rows.some(r=>r.produced>0||r.status))?LineSightCalc.cappedAdherence(rows):null;
   const spill=Object.values(mpsMonthShortfall(m)).reduce((s,v)=>s+v,0);
   return {m,weeks,cap,dem,util:pct(dem,cap),free:cap-dem,labor,coverage,closing,adherence,spill};
 }
@@ -2279,10 +2285,11 @@ function exportCSV(){
 
   else if(activeTab==='mps'){
     rows.push(['MPS BATCH PLAN']);
-    rows.push(['Date','Line','Seq','Job no','SKU','Product group','Qty','Produced','Status']);
+    rows.push(['Date','Line','Seq','Job no','SKU','Product group','Planned','Produced','Remaining','Completion %','Actual completion date','Status']);
     mps.filter(r=>mkOfDate(r.date)===m).sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1:((a.seq??1e9)-(b.seq??1e9))).forEach(r=>{
       const s=skuOf(r.sku);
-      rows.push([r.date,r.line,r.seq??'',r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty,r.produced>0?r.produced:'',r.status||(batchDone(r)?'Completed':'')]);
+      const produced=r.produced||0;
+      rows.push([r.date,r.line,r.seq??'',r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty,produced||'',Math.max(0,r.qty-produced),r.qty>0?Math.round(produced/r.qty*100):'',r.actualDate||'',r.status||(batchDone(r)?'Completed':'')]);
     });
   }
   else if(activeTab==='scenarios'){
@@ -2527,6 +2534,102 @@ function parseAnyDate(v){
   return null;
 }
 
+let completionPending=null;
+function completionFile(file){
+  if(!file) return;
+  const el=document.getElementById('completion-preview');
+  el.innerHTML='<div style="font-size:11px;color:var(--text2);">Reading completion data…</div>';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''}).filter(r=>r.some(c=>String(c).trim()!==''));
+      if(raw.length<2) throw new Error('The sheet looks empty.');
+      const head=raw[0].map(h=>String(h).trim());
+      const find=pats=>head.findIndex(h=>pats.some(p=>p.test(h)));
+      const ci={
+        job:find([/^job$/i,/job.?no/i,/batch.?no/i,/order.?no/i]),
+        date:find([/transaction.?date/i,/completion.?date/i,/^date$/i,/datum/i]),
+        qty:find([/completed.?qty/i,/completion.?qty/i,/produced.?qty/i,/actual.?qty/i]),
+        status:find([/^status$/i,/state/i]),
+        item:find([/^item$/i,/sku/i,/material/i]),
+        line:find([/^line$/i,/production.?line/i]),
+        shift:find([/^shift$/i]),
+        user:find([/^user$/i,/operator/i]),
+        lot:find([/^lot$/i,/batch/i])
+      };
+      if(ci.job<0||ci.date<0||ci.qty<0){
+        const missing=[ci.job<0?'Job':'',ci.date<0?'Transaction Date':'',ci.qty<0?'Completed Qty':''].filter(Boolean);
+        throw new Error('Missing required column(s): '+missing.join(', ')+'.');
+      }
+      const normalized=[], skipped=[];
+      raw.slice(1).forEach((r,ri)=>{
+        const job=String(r[ci.job]??'').trim();
+        const date=parseAnyDate(r[ci.date]);
+        const qty=parseQty(r[ci.qty]);
+        if(!job||job==='-'){ skipped.push(`Row ${ri+2}: no Job`); return; }
+        if(!date){ skipped.push(`Row ${ri+2}: invalid date`); return; }
+        if(qty<=0){ skipped.push(`Row ${ri+2}: invalid completed quantity`); return; }
+        normalized.push({job,date,qty});
+      });
+      completionPending=LineSightCalc.aggregateCompletions(normalized);
+      const jobs=[...new Set(completionPending.map(a=>a.job))];
+      const total=completionPending.reduce((s,a)=>s+a.qty,0);
+      el.innerHTML=`
+        <div style="font-size:11px;color:var(--text2);line-height:1.6;">
+          <strong style="color:var(--text);">${raw.length-1}</strong> source rows →
+          <strong style="color:var(--text);">${completionPending.length}</strong> Job/date totals ·
+          <strong style="color:var(--text);">${jobs.length}</strong> jobs ·
+          <strong style="color:var(--blue-l);">${hu(total)}</strong> completed units
+          ${skipped.length?` · <span style="color:var(--yellow);">${skipped.length} rows skipped</span>`:''}
+        </div>
+        ${skipped.slice(0,3).map(s=>`<div style="font-size:10px;color:var(--yellow);">${s}</div>`).join('')}
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="completionApply()">✓ Apply completion data</button>
+          <button class="add-btn" style="margin-top:0;" onclick="completionPending=null;document.getElementById('completion-preview').innerHTML=''">Cancel</button>
+        </div>`;
+    }catch(err){
+      completionPending=null;
+      el.innerHTML=`<div style="font-size:11px;color:var(--red);">Could not read completion data — ${err.message}</div>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function recomputeBatchCompletion(r){
+  const vals=Object.values(r.completionByDate||{});
+  if(!vals.length) return;
+  r.produced=vals.reduce((s,v)=>s+(+v.qty||0),0);
+  r.actualDate=vals.map(v=>v.date).sort().pop()||'';
+  r.status=r.produced>=r.qty?'Completed':'In progress';
+}
+function completionApply(){
+  if(!completionPending) return;
+  let matched=0, ambiguous=0;
+  const unmatched=new Set(), touched=new Set();
+  completionPending.forEach(c=>{
+    const hits=mps.filter(r=>String(r.job||'').trim()===c.job);
+    if(hits.length!==1){
+      if(hits.length>1) ambiguous++; else unmatched.add(c.job);
+      return;
+    }
+    const r=hits[0];
+    if(!r.completionByDate) r.completionByDate={};
+    r.completionByDate[c.date]=c;
+    touched.add(r);
+    matched++;
+  });
+  touched.forEach(recomputeBatchCompletion);
+  const total=touched.size;
+  const unmatchedJobs=[...unmatched];
+  completionPending=null;
+  document.getElementById('completion-preview').innerHTML=`
+    <div style="font-size:11px;color:var(--green);">✓ ${matched} Job/date totals applied to ${total} MPS batches.</div>
+    ${unmatchedJobs.length?`<div style="font-size:10px;color:var(--yellow);margin-top:4px;">${unmatchedJobs.length} unmatched Job no.: ${unmatchedJobs.slice(0,8).join(', ')}${unmatchedJobs.length>8?'…':''}</div>`:''}
+    ${ambiguous?`<div style="font-size:10px;color:var(--red);margin-top:4px;">${ambiguous} Job/date totals were not applied because the Job no. occurs more than once in the MPS.</div>`:''}`;
+  render();
+}
+
 let mpsRaw=null, mpsPending=null;
 function mpsFile(file){
   if(!file) return;
@@ -2674,6 +2777,19 @@ function mpsApply(){
     return;
   }
   const months=new Set(res.out.map(o=>mkOfDate(o.date)));
+  const oldByJob=new Map();
+  mps.filter(r=>months.has(mkOfDate(r.date))&&r.job).forEach(r=>{
+    const job=String(r.job).trim();
+    if(!oldByJob.has(job)) oldByJob.set(job,[]);
+    oldByJob.get(job).push(r);
+  });
+  res.out.forEach(r=>{
+    const old=oldByJob.get(String(r.job||'').trim());
+    if(old&&old.length===1&&old[0].completionByDate){
+      r.completionByDate=JSON.parse(JSON.stringify(old[0].completionByDate));
+      recomputeBatchCompletion(r);
+    }
+  });
   mps=mps.filter(r=>!months.has(mkOfDate(r.date))).concat(res.out);
   mps.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.line.localeCompare(b.line));
   Object.entries(res.skuInfo).forEach(([c,info])=>{
@@ -2830,17 +2946,22 @@ function autoPlace(){
 })();
 function setBatchDate(i,v){ if(v) mps[i].date=v; mpsResort(); render(); }
 function setBatchLine(i,v){ mps[i].line=v; render(); }
-function setProduced(i,v){ if(v===''||+v<=0) delete mps[i].produced; else mps[i].produced=+v; render(); }
+function setProduced(i,v){
+  delete mps[i].completionByDate; delete mps[i].actualDate;
+  if(v===''||+v<=0) delete mps[i].produced; else mps[i].produced=+v;
+  render();
+}
 function setSeq(i,v){ if(v===''||+v<=0) delete mps[i].seq; else mps[i].seq=+v; render(); }
 function mpsExport(){
   const m=mk(curDate);
   const rows=mps.filter(r=>mkOfDate(r.date)===m).sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1:((a.seq??1e9)-(b.seq??1e9))).map(r=>{
     const s=skuOf(r.sku);
-    return {Date:r.date, Line:r.line, Seq:r.seq??'', 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, Produced:r.produced>0?r.produced:'', Status:r.status||(batchDone(r)?'Completed':''), 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
+    const produced=r.produced||0, remaining=Math.max(0,r.qty-produced);
+    return {Date:r.date, Line:r.line, Seq:r.seq??'', 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, Produced:produced||'', Remaining:remaining, 'Completion %':r.qty>0?Math.round(produced/r.qty*100):'', 'Actual completion date':r.actualDate||'', Status:r.status||(batchDone(r)?'Completed':''), 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
   });
   if(!rows.length){ alert('No batches in the selected month to export.'); return; }
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:8},{wch:6},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:10},{wch:12},{wch:12},{wch:10},{wch:10}];
+  ws['!cols']=[{wch:12},{wch:8},{wch:6},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:10},{wch:10},{wch:12},{wch:16},{wch:12},{wch:12},{wch:10},{wch:10}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'MPS');
   XLSX.writeFile(wb,`linesight_mps_${curDate.getFullYear()}-${String(curDate.getMonth()+1).padStart(2,'0')}.xlsx`);
@@ -2916,8 +3037,8 @@ function renderMPS(){
   const doneRows=allMonth.filter(batchDone);
   const hasAdh=allMonth.some(r=>r.produced>0||r.status);
   const totPlannedAll=allMonth.reduce((s,r)=>s+r.qty,0);
-  const totProduced=allMonth.reduce((s,r)=>s+(r.produced||0),0);
-  const adh=totPlannedAll>0?Math.round(totProduced/totPlannedAll*100):0;
+  const totProduced=allMonth.reduce((s,r)=>s+Math.min(r.produced||0,r.qty||0),0);
+  const adh=LineSightCalc.cappedAdherence(allMonth);
   const adhCls=adh>=95?'ok':adh>=80?'warn':'danger';
   // units of this month's scheduled batches that cannot be produced within the month → next month's backlog
   const shortMap=mpsMonthShortfall(m); const monthSpill=Object.values(shortMap).reduce((s,v)=>s+v,0);
@@ -2956,7 +3077,9 @@ function renderMPS(){
 Job no: ${r.job}`:''}${co?`
 ⇄ changeover (SKU change from the previous batch)`:''}${r.produced>0?`
 Produced: ${hu(r.produced)}`:''}${r.status?`
-Status: ${r.status}`:''}">${done?'✓':''}${hu(r.qty)}</div>`;}).join('');
+Status: ${r.status}`:''}${r.actualDate?`
+Actual date: ${r.actualDate}`:''}${r.produced>0?`
+Remaining: ${hu(Math.max(0,r.qty-r.produced))}`:''}">${done?'✓':''}${hu(r.qty)}</div>`;}).join('');
         if(!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
         else if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else if(a.carryIn>0||a.carryOut>0){ bg='rgba(55,138,221,0.2)'; col='var(--blue-l)'; }
@@ -3022,13 +3145,14 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
   shown=shown.slice().sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1: ((a.seq??1e9)-(b.seq??1e9)));
   const bt=document.getElementById('mps-batch-table'); bt.innerHTML='';
   const bh=bt.createTHead().insertRow();
-  ['Date','Line','Seq','Job no.','SKU','Group','Qty','Produced','Status',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=(i===2||i>=6)?'c':''; bh.appendChild(th);});
+  ['Date','Line','Seq','Job no.','SKU','Group','Planned','Produced','Remaining','Completion','Actual date','Status',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=(i===2||i>=6)?'c':''; th.style.whiteSpace='nowrap'; bh.appendChild(th);});
   const bb=bt.createTBody();
   shown.forEach(r=>{
     const gi=mps.indexOf(r);
     const s=skuOf(r.sku), grp=s&&s.pg?pg(s.pg):null;
     const done=batchDone(r);
-    const adhP=r.qty>0&&r.produced>0?Math.round(r.produced/r.qty*100):null;
+    const produced=r.produced||0, remaining=Math.max(0,r.qty-produced);
+    const adhP=r.qty>0&&produced>0?Math.round(produced/r.qty*100):null;
     const statusCell=done?'<span class="pill pill-ok">✓ done</span>'
       :adhP!=null?`<span class="pill ${adhP>=80?'pill-warn':'pill-danger'}" title="${r.status||''}">${adhP}%</span>`
       :`<span style="font-size:10px;color:var(--text2);">${r.status||'—'}</span>`;
@@ -3041,11 +3165,14 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
       <td>${grp?`<span class="pg-dot" style="background:${grp.color};"></span><span style="font-size:10px;">${grp.label}</span>`:'<span style="font-size:10px;color:var(--yellow);">—</span>'}</td>
       <td class="c" style="width:64px;"><input class="wni" type="number" style="width:56px;" value="${r.qty}" min="1" oninput="mps[${gi}].qty=+this.value||0;render()"></td>
       <td class="c" style="width:64px;"><input class="wni" type="number" style="width:56px;" value="${r.produced??''}" min="0" placeholder="—" title="Actual produced quantity" oninput="setProduced(${gi},this.value)"></td>
+      <td class="c" style="font-family:var(--mono);font-size:10px;color:${remaining>0?'var(--yellow)':'var(--green)'};">${hu(remaining)}</td>
+      <td class="c" style="font-family:var(--mono);font-size:10px;color:${adhP==null?'var(--text2)':adhP>=100?'var(--green)':adhP>=80?'var(--yellow)':'var(--red)'};">${adhP==null?'—':adhP+'%'}</td>
+      <td class="c" style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.actualDate||'—'}</td>
       <td class="c" style="width:64px;">${statusCell}</td>
       <td class="c"><button class="del-btn" onclick="delBatch(${gi})">✕</button></td>
     `;
   });
-  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="10" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
+  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="13" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
 
   // ── Add-batch form + SKU master ──
   const mbLine=document.getElementById('mb-line');

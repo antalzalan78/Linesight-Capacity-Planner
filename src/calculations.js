@@ -61,6 +61,32 @@
     return result;
   }
 
+  function aggregateCompletions(rows=[]){
+    const byKey=new Map();
+    rows.forEach(row=>{
+      const job=String(row&&row.job||'').trim();
+      const date=String(row&&row.date||'').trim();
+      const qty=Math.max(0,finite(row&&row.qty));
+      if(!job||!date||qty<=0) return;
+      const key=job+'|'+date;
+      const current=byKey.get(key)||{job,date,qty:0,rows:0};
+      current.qty+=qty;
+      current.rows++;
+      byKey.set(key,current);
+    });
+    return [...byKey.values()];
+  }
+
+  function cappedAdherence(rows=[]){
+    const planned=rows.reduce((sum,row)=>sum+Math.max(0,finite(row&&row.qty)),0);
+    if(planned<=0) return 0;
+    const produced=rows.reduce((sum,row)=>{
+      const qty=Math.max(0,finite(row&&row.qty));
+      return sum+Math.min(qty,Math.max(0,finite(row&&row.produced)));
+    },0);
+    return percent(produced,planned);
+  }
+
   return {
     percent,
     dailyCapacity,
@@ -69,5 +95,7 @@
     monthEndCarry,
     basisShortfallToUnits,
     allocateUnitsByGroup,
+    aggregateCompletions,
+    cappedAdherence,
   };
 });
