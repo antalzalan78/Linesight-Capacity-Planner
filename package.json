@@ -1,0 +1,12 @@
+{
+  "name": "linesight-capacity-planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static production capacity and MPS planning tool",
+  "scripts": {
+    "test": "node --test tests/calculations.test.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

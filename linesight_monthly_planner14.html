@@ -6,6 +6,7 @@
 <title>LineSight — Monthly Capacity Planner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="./src/calculations.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 :root{
@@ -720,7 +721,7 @@ const getP = () => ({
 });
 const mk    = d => `${d.getFullYear()}-${d.getMonth()}`;
 const hu    = n => Math.round(n).toLocaleString('en-GB');
-const pct   = (a,b) => b===0 ? 0 : Math.round(a/b*100);
+const pct   = LineSightCalc.percent;
 const bCol  = p => p>95?'#E24B4A':p>80?'#EF9F27':'#1D9E75';
 const tCol  = p => p>95?'var(--red)':p>80?'var(--yellow)':'var(--green)';
 const pCls  = p => p>95?'pill-danger':p>80?'pill-warn':'pill-ok';
@@ -947,11 +948,15 @@ function renderHeadcount(){
   const wfSet=eff.ops>0;
   const dailyH=eff.contract/5, absF=1-eff.absence/100;
   const wkReq  =weeks.map((w,wi)=>wkHC(w,m,wi));
-  const wkAvail=weeks.map((w,wi)=>Math.round(eff.ops*dailyH*absF*effDays(w,m,wi)));
+  const wkAvail=weeks.map((w,wi)=>LineSightCalc.availableLaborHours({
+    operators:eff.ops,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+  }));
   // operators needed per week for full coverage (absence already grossed in via absF)
   const opsNeeded=weeks.map((w,wi)=>{
     const d=effDays(w,m,wi);
-    return d>0?Math.ceil(wkReq[wi]/(dailyH*absF*d)):0;
+    return LineSightCalc.operatorsNeeded({
+      requiredHours:wkReq[wi],contractHours:eff.contract,absenceRate:eff.absence,workingDays:d
+    });
   });
   const peakNeed=Math.max(0,...opsNeeded);
   const hireGap=wfSet?Math.max(0,peakNeed-eff.ops):null;
@@ -2201,7 +2206,16 @@ function mpsBatchLoad(r){
   if(mpsBasis==='min')     return r.qty*mpsStdMin(r.sku,r.line)+mpsSetup(r);
   return r.qty;
 }
-function mpsDayCap(l){ const p=getP(), base=Math.round(p.oee*100); return mpsIsMin()?Math.round(nActiveShifts(l)*p.shiftlen*60*((l.oee??base)/100)):Math.round(l.cap*((l.oee??base)/100)*p.shiftlen*nActiveShifts(l)); }
+function mpsDayCap(l){
+  const p=getP(), base=Math.round(p.oee*100);
+  return LineSightCalc.dailyCapacity({
+    rate:l.cap,
+    oee:(l.oee??base)/100,
+    shiftLength:p.shiftlen,
+    activeShifts:nActiveShifts(l),
+    basis:mpsIsMin()?'minutes':'units',
+  });
+}
 // ── Cross-month spill: units of scheduled batches that cannot be produced within month m, per product group ──
 // (the month-end carry that never clears becomes the next month's backlog)
 function mpsMonthShortfall(m){
@@ -2214,14 +2228,16 @@ function mpsMonthShortfall(m){
     if(!rows.length) return;
     const cap=mpsDayCap(l);
     const loadByDay={}; rows.forEach(r=>{ const d=+r.date.split('-')[2]; loadByDay[d]=(loadByDay[d]||0)+mpsBatchLoad(r); });
-    let carry=0; for(let d=1;d<=days;d++){ carry=Math.max(0, carry+(loadByDay[d]||0)-(isWork(d)?cap:0)); }
+    const carry=LineSightCalc.monthEndCarry({daysInMonth:days,loadsByDay:loadByDay,dayCapacity:cap,isWorkingDay:isWork});
     if(carry<=0) return; // everything fits this month
     const totLoad=Object.values(loadByDay).reduce((s,v)=>s+v,0);
-    const shortUnits=totLoad>0?rows.reduce((s,r)=>s+r.qty,0)*(carry/totLoad):0; // basis-shortfall → units
+    const shortUnits=LineSightCalc.basisShortfallToUnits({
+      carry,totalLoad:totLoad,totalUnits:rows.reduce((s,r)=>s+r.qty,0)
+    });
     const pgUnits={}; rows.forEach(r=>{ const sk=skuOf(r.sku); if(sk&&sk.pg) pgUnits[sk.pg]=(pgUnits[sk.pg]||0)+r.qty; });
     const pgTot=Object.values(pgUnits).reduce((s,v)=>s+v,0);
     if(pgTot<=0) return; // unassigned SKUs — cannot attribute to a product group
-    Object.entries(pgUnits).forEach(([k,u])=>{ out[k]=(out[k]||0)+Math.round(shortUnits*u/pgTot); });
+    Object.entries(LineSightCalc.allocateUnitsByGroup(shortUnits,pgUnits)).forEach(([k,u])=>{ out[k]=(out[k]||0)+u; });
   });
   return out;
 }
