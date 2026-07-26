@@ -4,7 +4,7 @@
   "private": true,
   "description": "Static production capacity and MPS planning tool",
   "scripts": {
-    "test": "node --test tests/calculations.test.cjs"
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"

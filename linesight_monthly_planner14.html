@@ -6,6 +6,7 @@
 <title>LineSight — Monthly Capacity Planner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./src/calculations.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
@@ -22,6 +23,7 @@
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;padding:1.5rem 2rem 3rem;}
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.75rem;padding-bottom:1rem;border-bottom:.5px solid var(--border);}
 .header-left{display:flex;align-items:baseline;gap:12px;}
+.header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
 .logo{font-family:var(--mono);font-size:18px;font-weight:500;color:var(--green);}
 .header-title{font-size:13px;color:var(--text2);font-weight:300;}
 .month-nav{display:flex;align-items:center;gap:6px;}
@@ -155,10 +157,13 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <span style="color:var(--border);font-size:18px;">|</span>
     <span class="header-title">Monthly Capacity Planner</span>
   </div>
-  <div class="month-nav">
-    <button class="nav-btn" onclick="changeMonth(-1)">&#8592;</button>
-    <span class="month-label" id="month-label"></span>
-    <button class="nav-btn" onclick="changeMonth(1)">&#8594;</button>
+  <div class="header-actions">
+    <button id="auth-btn" onclick="openAuth()" class="nav-btn" title="Sign in for secure cloud sync" style="font-family:var(--mono);font-size:11px;">○ Local mode · Sign in</button>
+    <div class="month-nav">
+      <button class="nav-btn" onclick="changeMonth(-1)">&#8592;</button>
+      <span class="month-label" id="month-label"></span>
+      <button class="nav-btn" onclick="changeMonth(1)">&#8594;</button>
+    </div>
   </div>
 </div>
 
@@ -610,6 +615,63 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   </div>
 </div>
 
+<!-- ══ AUTH MODAL ══ -->
+<div id="auth-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.62);z-index:120;align-items:center;justify-content:center;">
+  <div class="card" style="width:440px;max-width:92vw;max-height:88vh;overflow-y:auto;margin:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+      <div>
+        <div class="logo" style="font-size:15px;">LineSight</div>
+        <div class="section-label" style="margin:4px 0 0;">Secure cloud access</div>
+      </div>
+      <button onclick="closeAuth()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;padding:2px 6px;">✕</button>
+    </div>
+
+    <div id="auth-config-missing" style="display:none;">
+      <div class="pill pill-warn" style="display:inline-block;margin-bottom:10px;">Connection setup required</div>
+      <p class="info-text">Add the Supabase project URL and publishable key under <strong>☁ Sync</strong> before signing in. The publishable key is safe in the browser when Row Level Security is enabled.</p>
+      <button class="add-btn" style="margin-top:0;" onclick="closeAuth();openSync()">Open Sync settings</button>
+    </div>
+
+    <div id="auth-email-view">
+      <p class="info-text">Sign in to access your secure cloud plan. We will send a one-time verification code to your email address.</p>
+      <div class="param-row">
+        <div class="param-label-row"><span class="param-label">Email address</span></div>
+        <input type="email" id="auth-email" class="ni" placeholder="name@company.com" autocomplete="email" onkeydown="if(event.key==='Enter')sendAuthCode()">
+      </div>
+      <button id="auth-send-btn" class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="sendAuthCode()">Send verification code</button>
+    </div>
+
+    <div id="auth-code-view" style="display:none;">
+      <p class="info-text">Enter the six-digit code sent to <strong id="auth-email-label" style="color:var(--text);"></strong>.</p>
+      <div class="param-row">
+        <div class="param-label-row"><span class="param-label">Verification code</span></div>
+        <input type="text" inputmode="numeric" maxlength="6" id="auth-code" class="ni" placeholder="000000" autocomplete="one-time-code" style="font-family:var(--mono);font-size:20px;letter-spacing:.3em;text-align:center;" onkeydown="if(event.key==='Enter')verifyAuthCode()">
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="auth-verify-btn" class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="verifyAuthCode()">Verify and sign in</button>
+        <button class="add-btn" style="margin-top:0;" onclick="showAuthEmail()">Use another email</button>
+      </div>
+    </div>
+
+    <div id="auth-user-view" style="display:none;">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;border:.5px solid var(--border);border-radius:7px;background:var(--bg3);margin-bottom:1rem;">
+        <span style="width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(29,158,117,.5);"></span>
+        <div>
+          <div style="font-size:12px;color:var(--green-l);">Signed in</div>
+          <div id="auth-user-email" style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-top:2px;"></div>
+        </div>
+      </div>
+      <p class="info-text">Cloud requests are authenticated and restricted by the database Row Level Security policies.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="add-btn" style="margin-top:0;" onclick="closeAuth();openSync()">Cloud settings</button>
+        <button class="add-btn" style="margin-top:0;border-color:var(--red);color:var(--red);" onclick="signOutUser()">Sign out</button>
+      </div>
+    </div>
+
+    <div id="auth-message" style="font-size:11px;line-height:1.5;margin-top:12px;color:var(--text2);"></div>
+  </div>
+</div>
+
 <!-- ══ CLOUD SYNC MODAL ══ -->
 <div id="sync-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100;align-items:center;justify-content:center;">
   <div class="card" style="width:520px;max-width:92vw;max-height:88vh;overflow-y:auto;margin:0;">
@@ -618,8 +680,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <button onclick="closeSync()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;padding:2px 6px;">✕</button>
     </div>
     <p class="info-text">
-      Store the plan in a shared cloud database so your team sees the same data on any machine.
-      Changes push automatically (a few seconds after each edit); the plan is pulled when the app opens.
+      Secure cloud sync requires a signed-in user and Row Level Security. Changes push automatically a few seconds after each edit; local planning remains available while signed out.
     </p>
     <div class="param-row">
       <div class="param-label-row"><span class="param-label">Supabase project URL</span></div>
@@ -634,7 +695,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <input type="text" id="sy-plan" class="ni" value="default">
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:1rem;">
-      <input type="checkbox" id="sy-on"> Enable automatic sync
+      <input type="checkbox" id="sy-on"> Enable automatic sync after sign-in
     </label>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="applySyncSettings()">✓ Save settings</button>
@@ -643,23 +704,14 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     </div>
     <div class="divider"></div>
     <details style="font-size:11px;color:var(--text2);">
-      <summary style="cursor:pointer;margin-bottom:8px;">One-time Supabase setup (free) — click to expand</summary>
+      <summary style="cursor:pointer;margin-bottom:8px;">Secure Supabase setup — click to expand</summary>
       <ol style="margin-left:16px;line-height:1.8;">
-        <li>Go to <span style="font-family:var(--mono);">supabase.com</span> → New project (free tier is enough).</li>
-        <li>Open <strong>SQL Editor</strong> and run:</li>
+        <li>Enable Email authentication in Supabase Authentication.</li>
+        <li>Open <strong>SQL Editor</strong> and run the repository migration: <span style="font-family:var(--mono);color:var(--text);">supabase/secure_auth_migration.sql</span>.</li>
+        <li>Sign in once, copy your user UUID from Authentication → Users, and assign any existing plan row to that UUID as described in the migration.</li>
+        <li>Copy the Project URL and publishable key into the fields above. Never use a secret/service-role key here.</li>
       </ol>
-      <pre style="background:var(--bg3);border-radius:5px;padding:8px;font-size:10px;overflow-x:auto;margin:6px 0;">create table if not exists plans (
-  id text primary key,
-  data jsonb not null,
-  updated_at timestamptz not null default now());
-alter table plans enable row level security;
-create policy "open access" on plans
-  for all using (true) with check (true);</pre>
-      <ol start="3" style="margin-left:16px;line-height:1.8;">
-        <li>In <strong>Project Settings → API</strong> copy the <em>Project URL</em> and the <em>anon public</em> key into the fields above.</li>
-        <li>Tick "Enable automatic sync", Save, then <strong>⬆ Push</strong> once to upload the current plan.</li>
-      </ol>
-      <p style="margin-top:6px;color:var(--yellow);">⚠ Anyone who has the URL + anon key can read and write this plan — share them only with your team (e.g. private Teams chat), never publish them.</p>
+      <p style="margin-top:8px;color:var(--green-l);">✓ With the migration active, the publishable key alone cannot read or modify plans. Access also requires a valid signed-in user whose ID matches the plan owner.</p>
     </details>
   </div>
 </div>
@@ -669,7 +721,7 @@ create policy "open access" on plans
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
     <button onclick="undoPlan()" id="undo-btn" disabled title="No change to undo" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:not-allowed;opacity:.45;transition:all .15s;">↶ Undo</button>
     <button onclick="openHistory()" title="Save or restore local plan versions" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">◷ Versions</button>
-    <button onclick="openSync()" title="Shared cloud storage for the plan (Supabase)" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">☁ Sync</button>
+    <button id="sync-btn" onclick="openSync()" title="Secure cloud storage for the plan (Supabase)" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">☁ Local only</button>
     <button onclick="printReport()" title="Print / save a one-page monthly report as PDF" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">🖨 Report</button>
     <button onclick="exportCSV()" title="Export the active tab's data for the selected month" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">⬇ Export CSV</button>
     <button onclick="resetData()" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">↺ Reset</button>
@@ -3288,6 +3340,110 @@ document.addEventListener('keydown',e=>{
 let syncCfg={url:'',key:'',plan:'default',enabled:false};
 try{ Object.assign(syncCfg, JSON.parse(localStorage.getItem('ls_sync')||'{}')); }catch(e){}
 let pushT=null, suppressPush=false;
+let sbClient=null, authSession=null, authUser=null, authSubscription=null, authClientKey='', pendingAuthEmail='';
+
+function authMsg(text,color){
+  const el=document.getElementById('auth-message');
+  if(el){ el.textContent=text||''; el.style.color=color||'var(--text2)'; }
+}
+function renderAuthState(){
+  const signedIn=!!authUser;
+  const configured=syncReady();
+  const authBtn=document.getElementById('auth-btn');
+  const syncBtn=document.getElementById('sync-btn');
+  if(authBtn){
+    authBtn.textContent=signedIn?`● ${authUser.email||'Signed in'}`:'○ Local mode · Sign in';
+    authBtn.style.color=signedIn?'var(--green-l)':'var(--text2)';
+    authBtn.style.borderColor=signedIn?'var(--green)':'var(--border)';
+    authBtn.title=signedIn?'Signed in — click for account options':configured?'Sign in for secure cloud sync':'Configure Supabase, then sign in';
+  }
+  if(syncBtn){
+    syncBtn.textContent=signedIn?(syncCfg.enabled?'☁ Secure sync':'☁ Sync off'):'☁ Local only';
+    syncBtn.style.color=signedIn&&syncCfg.enabled?'var(--green-l)':'var(--text2)';
+  }
+}
+function setAuthSession(session,pullCloud){
+  authSession=session||null;
+  authUser=session?.user||null;
+  renderAuthState();
+  if(authUser&&syncCfg.enabled&&pullCloud) cloudPull(true);
+  if(!authUser) setSyncStatus(syncCfg.enabled?'○ local mode — sign in to sync':'');
+}
+async function initAuth(){
+  if(!syncReady()||!window.supabase?.createClient){
+    setAuthSession(null,false);
+    return false;
+  }
+  const key=syncCfg.url+'|'+syncCfg.key;
+  if(sbClient&&authClientKey===key) return true;
+  if(authSubscription){ try{ authSubscription.unsubscribe(); }catch(e){} }
+  sbClient=window.supabase.createClient(syncCfg.url,syncCfg.key,{
+    auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
+  });
+  authClientKey=key;
+  const {data}=await sbClient.auth.getSession();
+  setAuthSession(data?.session||null,false);
+  const listener=sbClient.auth.onAuthStateChange((_event,session)=>{
+    setTimeout(()=>setAuthSession(session,true),0);
+  });
+  authSubscription=listener.data?.subscription||null;
+  return true;
+}
+function openAuth(){
+  const configured=syncReady();
+  document.getElementById('auth-config-missing').style.display=configured?'none':'block';
+  document.getElementById('auth-email-view').style.display=configured&&!authUser?'block':'none';
+  document.getElementById('auth-code-view').style.display='none';
+  document.getElementById('auth-user-view').style.display=authUser?'block':'none';
+  document.getElementById('auth-user-email').textContent=authUser?.email||'';
+  authMsg('');
+  document.getElementById('auth-modal').style.display='flex';
+  if(configured&&!authUser) setTimeout(()=>document.getElementById('auth-email').focus(),50);
+}
+function closeAuth(){ document.getElementById('auth-modal').style.display='none'; }
+function showAuthEmail(){
+  document.getElementById('auth-email-view').style.display='block';
+  document.getElementById('auth-code-view').style.display='none';
+  authMsg('');
+}
+async function sendAuthCode(){
+  const email=document.getElementById('auth-email').value.trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ authMsg('Enter a valid email address.','var(--red)'); return; }
+  if(!await initAuth()){ authMsg('Configure the Supabase connection first.','var(--red)'); return; }
+  const btn=document.getElementById('auth-send-btn'); btn.disabled=true; btn.textContent='Sending…';
+  try{
+    const redirectTo=window.location.href.split('?')[0].split('#')[0];
+    const {error}=await sbClient.auth.signInWithOtp({email,options:{shouldCreateUser:true,emailRedirectTo:redirectTo}});
+    if(error) throw error;
+    pendingAuthEmail=email;
+    document.getElementById('auth-email-label').textContent=email;
+    document.getElementById('auth-email-view').style.display='none';
+    document.getElementById('auth-code-view').style.display='block';
+    authMsg('Code sent. You can also use the sign-in link in the email.','var(--green-l)');
+    setTimeout(()=>document.getElementById('auth-code').focus(),50);
+  }catch(e){ authMsg('Could not send the code: '+e.message,'var(--red)'); }
+  finally{ btn.disabled=false; btn.textContent='Send verification code'; }
+}
+async function verifyAuthCode(){
+  const token=document.getElementById('auth-code').value.replace(/\D/g,'');
+  if(token.length!==6){ authMsg('Enter the six-digit verification code.','var(--red)'); return; }
+  const btn=document.getElementById('auth-verify-btn'); btn.disabled=true; btn.textContent='Verifying…';
+  try{
+    const {data,error}=await sbClient.auth.verifyOtp({email:pendingAuthEmail,token,type:'email'});
+    if(error) throw error;
+    setAuthSession(data.session,true);
+    document.getElementById('auth-user-email').textContent=data.user?.email||pendingAuthEmail;
+    document.getElementById('auth-code-view').style.display='none';
+    document.getElementById('auth-user-view').style.display='block';
+    authMsg('Signed in successfully.','var(--green-l)');
+  }catch(e){ authMsg('Sign-in failed: '+e.message,'var(--red)'); }
+  finally{ btn.disabled=false; btn.textContent='Verify and sign in'; }
+}
+async function signOutUser(){
+  if(sbClient) await sbClient.auth.signOut();
+  setAuthSession(null,false);
+  closeAuth();
+}
 
 function setSyncStatus(txt,color){
   const el=document.getElementById('sync-status');
@@ -3320,30 +3476,37 @@ function syncControls(){
 }
 const syncReady=()=>!!(syncCfg.url&&syncCfg.key);
 const syncBase =()=>syncCfg.url.replace(/\/+$/,'')+'/rest/v1/plans';
-// Legacy anon keys are JWTs (eyJ…) and need the Bearer header too;
-// new publishable keys (sb_publishable_…) must be sent as apikey only.
 const syncHdrs =()=>{
-  const h={apikey:syncCfg.key, 'Content-Type':'application/json'};
-  if(syncCfg.key.startsWith('eyJ')) h.Authorization='Bearer '+syncCfg.key;
-  return h;
+  if(!authSession?.access_token) throw new Error('Sign in is required');
+  return {
+    apikey:syncCfg.key,
+    Authorization:'Bearer '+authSession.access_token,
+    'Content-Type':'application/json'
+  };
 };
 
 function schedulePush(){
-  if(!syncCfg.enabled||!syncReady()||suppressPush) return;
+  if(!syncCfg.enabled||!syncReady()||!authUser||suppressPush) return;
   clearTimeout(pushT);
   pushT=setTimeout(cloudPush, 2500);
 }
 async function cloudPush(){
   if(!syncReady()){ alert('Set the Supabase URL and anon key first (☁ Sync).'); return; }
+  if(!authUser){ setSyncStatus('○ local mode — sign in to sync'); openAuth(); return; }
   clearTimeout(pushT);
   try{
     setSyncStatus('☁ syncing…');
     const res=await fetch(syncBase()+'?on_conflict=id',{
       method:'POST',
       headers:Object.assign(syncHdrs(),{Prefer:'resolution=merge-duplicates'}),
-      body:JSON.stringify([{id:syncCfg.plan||'default', data:fullState(), updated_at:new Date().toISOString()}])
+      body:JSON.stringify([{
+        id:syncCfg.plan||'default',
+        owner_id:authUser.id,
+        data:fullState(),
+        updated_at:new Date().toISOString()
+      }])
     });
-    if(!res.ok) throw new Error('HTTP '+res.status);
+    if(!res.ok) throw new Error('HTTP '+res.status+' — '+(await res.text()).slice(0,180));
     setSyncStatus('☁ synced '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),'var(--green)');
   }catch(e){
     setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
@@ -3351,10 +3514,11 @@ async function cloudPush(){
 }
 async function cloudPull(silent){
   if(!syncReady()){ if(!silent) alert('Set the Supabase URL and anon key first (☁ Sync).'); return; }
+  if(!authUser){ setSyncStatus('○ local mode — sign in to sync'); if(!silent) openAuth(); return; }
   try{
     setSyncStatus('☁ loading…');
     const res=await fetch(syncBase()+'?id=eq.'+encodeURIComponent(syncCfg.plan||'default')+'&select=data,updated_at',{headers:syncHdrs()});
-    if(!res.ok) throw new Error('HTTP '+res.status);
+    if(!res.ok) throw new Error('HTTP '+res.status+' — '+(await res.text()).slice(0,180));
     const rows=await res.json();
     if(rows.length&&rows[0].data){
       applyFullState(rows[0].data);
@@ -3375,15 +3539,18 @@ function openSync(){
   document.getElementById('sync-modal').style.display='flex';
 }
 function closeSync(){ document.getElementById('sync-modal').style.display='none'; }
-function applySyncSettings(){
+async function applySyncSettings(){
   syncCfg.url=document.getElementById('sy-url').value.trim();
   syncCfg.key=document.getElementById('sy-key').value.trim();
   syncCfg.plan=document.getElementById('sy-plan').value.trim()||'default';
   syncCfg.enabled=document.getElementById('sy-on').checked;
   localStorage.setItem('ls_sync',JSON.stringify(syncCfg));
   closeSync();
-  if(syncCfg.enabled) cloudPull(true);
+  await initAuth();
+  if(syncCfg.enabled&&authUser) cloudPull(true);
+  else if(syncCfg.enabled) setSyncStatus('○ local mode — sign in to sync');
   else setSyncStatus('');
+  renderAuthState();
 }
 
 // ════════════════════════════════
@@ -3523,7 +3690,11 @@ document.getElementById('footer-date').textContent=new Date().toLocaleDateString
 loadVersions();
 load();
 render();
-if(syncCfg.enabled) cloudPull(true);
+initAuth().then(()=>{
+  renderAuthState();
+  if(syncCfg.enabled&&authUser) cloudPull(true);
+  else if(syncCfg.enabled) setSyncStatus('○ local mode — sign in to sync');
+});
 </script>
 </body>
 </html>
