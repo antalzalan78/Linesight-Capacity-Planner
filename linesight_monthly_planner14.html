@@ -639,8 +639,8 @@ create policy "open access" on plans
     <button onclick="printReport()" title="Print / save a one-page monthly report as PDF" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">🖨 Report</button>
     <button onclick="exportCSV()" title="Export the active tab's data for the selected month" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">⬇ Export CSV</button>
     <button onclick="resetData()" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:5px;border:.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">↺ Reset</button>
-    <button onclick="runAI()" id="ai-btn" style="display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;padding:6px 14px;border-radius:5px;border:.5px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border)'">
-      ✦ AI Analysis
+    <button onclick="runAI()" id="ai-btn" title="AI analysis requires a secure server-side connection" style="display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;padding:6px 14px;border-radius:5px;border:.5px solid var(--yellow);background:var(--yellow-bg);color:var(--yellow);cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='var(--yellow)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--yellow)';this.style.color='var(--yellow)'">
+      ✦ AI · Not configured
     </button>
   </div>
   <span id="footer-date"></span>
@@ -1769,6 +1769,25 @@ function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];
 // AI ANALYSIS
 // ════════════════════════════════
 async function runAI(){
+  {
+  // GitHub Pages is a public static site, so an AI provider key must never be
+  // stored or called directly from this browser code. Keep the feature clearly
+  // marked as unavailable until a secure server-side endpoint is connected.
+  const panel=document.getElementById('ai-panel');
+  const output=document.getElementById('ai-output');
+  const setupYear=curDate.getFullYear(), setupMonth=curDate.getMonth();
+  document.getElementById('ai-month-label').textContent='Setup required';
+  output.innerHTML=`
+    <div style="color:var(--yellow);font-family:var(--mono);font-size:12px;margin-bottom:8px;">AI analysis is not configured</div>
+    <div style="color:var(--text2);">
+      The planner is running as a public GitHub Pages site. To protect the API key, AI analysis must be connected through a secure server-side endpoint before it can be enabled.<br><br>
+      The planning data for <strong style="color:var(--text);">${MN[setupMonth]} ${setupYear}</strong> has not been sent anywhere.
+    </div>`;
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+  return;
+  }
+
   const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
   const weeks=weeksOf(year,month);
   const p=getP();
