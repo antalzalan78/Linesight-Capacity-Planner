@@ -521,6 +521,17 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 
 <!-- ══ CHART ══ -->
 <div class="view-panel" id="panel-chart">
+  <div class="metrics-strip" id="kpi-strip" style="margin-bottom:1.25rem;"></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(460px,1fr));gap:1.25rem;align-items:start;margin-bottom:1.25rem;">
+    <div class="card">
+      <div class="section-label">KPI by line — <span id="kpi-line-month"></span></div>
+      <div style="overflow-x:auto;"><table class="gt" id="kpi-line-table"></table></div>
+    </div>
+    <div class="card">
+      <div class="section-label">KPI by product group</div>
+      <div style="overflow-x:auto;"><table class="gt" id="kpi-pg-table"></table></div>
+    </div>
+  </div>
   <div class="card" style="margin-bottom:1.25rem;">
     <div class="section-label">Weekly capacity vs. demand — <span id="chart-month-label"></span></div>
     <div class="chart-legend">
@@ -1749,10 +1760,127 @@ function renderMonthlyTable(){
 // ════════════════════════════════
 // CHART VIEW
 // ════════════════════════════════
+// Key figures for any month (parameterised twin of computeMetrics, which is scenario-scoped)
+function monthKPI(d){
+  const y=d.getFullYear(), mo=d.getMonth(), m=mk(d);
+  const weeks=weeksOf(y,mo);
+  let cap=0,dem=0,labor=0;
+  weeks.forEach((w,wi)=>{cap+=wkCap(w,m,wi); dem+=wkDem(w,m,wi,weeks); labor+=wkHC(w,m,wi);});
+  const series=backlogSeries(m,weeks,totBLOpen(m));
+  const closing=series.length?series[series.length-1].bl:0;
+  const W=wfFor(m);
+  let coverage=null;
+  if(W.ops>0&&labor>0){
+    const dailyH=W.contract/5, absF=1-W.absence/100;
+    const avail=weeks.reduce((s,w,wi)=>s+W.ops*dailyH*absF*effDays(w,m,wi),0);
+    coverage=Math.round(avail/labor*100);
+  }
+  const rows=mps.filter(r=>mkOfDate(r.date)===m);
+  const planned=rows.reduce((s,r)=>s+r.qty,0);
+  const produced=rows.reduce((s,r)=>s+(r.produced||0),0);
+  const adherence=(planned>0&&rows.some(r=>r.produced>0||r.status))?Math.round(produced/planned*100):null;
+  const spill=Object.values(mpsMonthShortfall(m)).reduce((s,v)=>s+v,0);
+  return {m,weeks,cap,dem,util:pct(dem,cap),free:cap-dem,labor,coverage,closing,adherence,spill};
+}
+
+// KPI strip + KPI tables on the Charts tab
+function renderKPIs(year,month,m,weeks){
+  const cur=monthKPI(new Date(year,month,1));
+  const prev=monthKPI(new Date(year,month-1,1));
+  const dRel=(a,b)=>{ if(!b) return 'vs prev: n/a'; const p=Math.round((a-b)/Math.abs(b)*100); return p===0?'= vs prev month':`${p>0?'▲':'▼'} ${Math.abs(p)}% vs prev month`; };
+  const dPP =(a,b)=>{ if(a==null||b==null) return 'vs prev: n/a'; const p=a-b; return p===0?'= vs prev month':`${p>0?'▲':'▼'} ${Math.abs(p)} pp vs prev month`; };
+  document.getElementById('kpi-strip').innerHTML=`
+    <div class="metric"><div class="metric-label">Capacity</div><div class="metric-val">${hu(cur.cap)}</div><div class="metric-sub">${dRel(cur.cap,prev.cap)}</div></div>
+    <div class="metric"><div class="metric-label">Demand</div><div class="metric-val">${hu(cur.dem)}</div><div class="metric-sub">${dRel(cur.dem,prev.dem)}</div></div>
+    <div class="metric"><div class="metric-label">Utilisation</div><div class="metric-val ${mCls(cur.util)}">${cur.util}%</div><div class="metric-sub">${dPP(cur.util,prev.util)}</div></div>
+    <div class="metric"><div class="metric-label">Free capacity</div><div class="metric-val ${cur.free<0?'danger':'ok'}">${cur.free>=0?'+':''}${hu(cur.free)}</div><div class="metric-sub">units this month</div></div>
+    <div class="metric"><div class="metric-label">Labor hrs</div><div class="metric-val">${hu(cur.labor)}</div><div class="metric-sub">${dRel(cur.labor,prev.labor)}</div></div>
+    <div class="metric"><div class="metric-label">Coverage</div><div class="metric-val ${cur.coverage==null?'':cur.coverage>=100?'ok':cur.coverage>=90?'warn':'danger'}">${cur.coverage==null?'—':cur.coverage+'%'}</div><div class="metric-sub">${cur.coverage==null?'workforce check off':dPP(cur.coverage,prev.coverage)}</div></div>
+    <div class="metric"><div class="metric-label">Closing backlog</div><div class="metric-val ${cur.closing>0?'danger':'ok'}">${hu(cur.closing)}</div><div class="metric-sub">${cur.closing>0?'units at month end':'cleared'}</div></div>
+    <div class="metric"><div class="metric-label">Adherence</div><div class="metric-val ${cur.adherence==null?'':cur.adherence>=95?'ok':cur.adherence>=80?'warn':'danger'}">${cur.adherence==null?'—':cur.adherence+'%'}</div><div class="metric-sub">${cur.adherence==null?'no actuals yet':'produced vs. planned'}</div></div>
+    <div class="metric"><div class="metric-label">MPS spill</div><div class="metric-val ${cur.spill>0?'danger':'ok'}">${hu(cur.spill)}</div><div class="metric-sub">units rolling to next month</div></div>
+  `;
+
+  // ── KPI by line ──
+  document.getElementById('kpi-line-month').textContent=`${MN[month]} ${year}`;
+  const base=Math.round(getP().oee*100);
+  const lt=document.getElementById('kpi-line-table'); lt.innerHTML='';
+  const lh=lt.createTHead().insertRow();
+  ['Line','Group','OEE%','Capacity','Demand','Util%','Labor hrs','Backlog','Status'].forEach((h,i)=>{const th=document.createElement('th');th.textContent=h;th.className=i<2?'':'c';th.style.whiteSpace='nowrap';lh.appendChild(th);});
+  const lb=lt.createTBody();
+  let tC=0,tD=0,tL=0,tB=0;
+  lines.forEach(l=>{
+    const g=pg(l.pg);
+    let cap=0,dem=0;
+    weeks.forEach((w,wi)=>{cap+=lWkCap(l,w,m,wi); dem+=lWkDem(l,w,m,wi,weeks);});
+    const labor=lMoHC(l,weeks,m);
+    const bl=lineBacklog(m,weeks,l).close;
+    const ut=pct(dem,cap);
+    tC+=cap; tD+=dem; tL+=labor; tB+=bl;
+    lb.insertRow().innerHTML=`
+      <td style="font-size:12px;">${l.name}</td>
+      <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
+      <td class="c" style="font-family:var(--mono);color:${l.oee!=null?'var(--text)':'var(--text2)'};">${l.oee??base}%</td>
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(cap)}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(dem)}</td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;color:${tCol(ut)};">${ut}%</td>
+      <td class="c" style="font-family:var(--mono);">${hu(labor)}</td>
+      <td class="c" style="font-family:var(--mono);color:${bl>0?'var(--red)':'var(--text2)'};">${hu(bl)}</td>
+      <td class="c"><span class="pill ${pCls(ut)}">${pTxt(ut)}</span></td>
+    `;
+  });
+  const ltr=lb.insertRow(); ltr.className='tot';
+  ltr.innerHTML=`<td colspan="3">TOTAL</td>
+    <td class="c" style="color:var(--green);">${hu(tC)}</td>
+    <td class="c" style="color:var(--blue);">${hu(tD)}</td>
+    <td class="c" style="color:${tCol(pct(tD,tC))};">${pct(tD,tC)}%</td>
+    <td class="c">${hu(tL)}</td>
+    <td class="c" style="color:${tB>0?'var(--red)':'var(--text2)'};">${hu(tB)}</td>
+    <td></td>`;
+
+  // ── KPI by product group ──
+  const pt=document.getElementById('kpi-pg-table'); pt.innerHTML='';
+  const ph=pt.createTHead().insertRow();
+  ['Group','Lines','Capacity','Demand','Util%','Open BL','Close BL','Status'].forEach((h,i)=>{const th=document.createElement('th');th.textContent=h;th.className=i<2?'':'c';th.style.whiteSpace='nowrap';ph.appendChild(th);});
+  const pb=pt.createTBody();
+  let pC=0,pD=0,pO=0,pB=0;
+  PGS.forEach(g=>{
+    const pgL=lines.filter(l=>l.pg===g.key);
+    const cap=pgL.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
+    const dem=pgDem(m,g.key);
+    if(!pgL.length&&!dem) return; // hide groups with neither lines nor demand
+    const open=blOpenEff(m,g.key), close=pgBacklogClose(m,weeks,g.key);
+    const ut=pct(dem,cap);
+    pC+=cap; pD+=dem; pO+=open; pB+=close;
+    pb.insertRow().innerHTML=`
+      <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
+      <td style="font-size:11px;color:var(--text2);">${pgL.length?pgL.map(l=>l.name).join(', '):'—'}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--green-l);">${pgL.length?hu(cap):'—'}</td>
+      <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(dem)}</td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;color:${pgL.length?tCol(ut):'var(--text2)'};">${pgL.length?ut+'%':'—'}</td>
+      <td class="c" style="font-family:var(--mono);color:${open>0?'var(--yellow)':'var(--text2)'};">${hu(open)}</td>
+      <td class="c" style="font-family:var(--mono);color:${close>0?'var(--red)':'var(--text2)'};">${hu(close)}</td>
+      <td class="c">${pgL.length?`<span class="pill ${pCls(ut)}">${pTxt(ut)}</span>`:'<span class="pill pill-warn">No line</span>'}</td>
+    `;
+  });
+  if(!pb.rows.length) pb.insertRow().innerHTML='<td colspan="8" style="font-size:11px;color:var(--text2);border:none;">No product groups in use yet.</td>';
+  else {
+    const ptr=pb.insertRow(); ptr.className='tot';
+    ptr.innerHTML=`<td colspan="2">TOTAL</td>
+      <td class="c" style="color:var(--green);">${hu(pC)}</td>
+      <td class="c" style="color:var(--blue);">${hu(pD)}</td>
+      <td class="c" style="color:${tCol(pct(pD,pC))};">${pct(pD,pC)}%</td>
+      <td class="c" style="color:${pO>0?'var(--yellow)':'var(--text2)'};">${hu(pO)}</td>
+      <td class="c" style="color:${pB>0?'var(--red)':'var(--text2)'};">${hu(pB)}</td>
+      <td></td>`;
+  }
+}
+
 function renderCharts(){
   const year=curDate.getFullYear(),month=curDate.getMonth(),m=mk(curDate);
   const weeks=weeksOf(year,month);
   document.getElementById('chart-month-label').textContent=`${MN[month]} ${year}`;
+  renderKPIs(year,month,m,weeks);
   const lbls=weeks.map(w=>w.label);
   const caps=weeks.map((w,wi)=>wkCap(w,m,wi));
   const dems=weeks.map((w,wi)=>wkDem(w,m,wi,weeks));
@@ -1932,6 +2060,21 @@ function exportCSV(){
   rows.push(['Parameters',`${p.shifts} shifts/day × ${p.shiftlen}h`,`OEE ${Math.round(p.oee*100)}%`,`${fmtD(p.days)} days/week`,`demand mode: ${demandMode}`]);
   rows.push([]);
 
+  if(activeTab==='chart'){
+    const K=monthKPI(new Date(year,month,1)), P=monthKPI(new Date(year,month-1,1));
+    rows.push(['KPI OVERVIEW']);
+    rows.push(['KPI','This month','Previous month']);
+    rows.push(['Capacity (units)',K.cap,P.cap]);
+    rows.push(['Demand (units)',K.dem,P.dem]);
+    rows.push(['Utilisation %',K.util,P.util]);
+    rows.push(['Free capacity',K.free,P.free]);
+    rows.push(['Labor hrs',K.labor,P.labor]);
+    rows.push(['Coverage %',K.coverage??'',P.coverage??'']);
+    rows.push(['Closing backlog',K.closing,P.closing]);
+    rows.push(['Adherence %',K.adherence??'',P.adherence??'']);
+    rows.push(['MPS spill to next month',K.spill,P.spill]);
+    rows.push([]);
+  }
   if(activeTab==='weekly'||activeTab==='chart'){
     rows.push(['WEEKLY BREAKDOWN']);
     rows.push(['Week','Period','Days','Capacity','Demand','Util %','Slack','OEE %','Demand factor %']);
