@@ -304,7 +304,11 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <div class="card">
       <div class="section-label">MPS import (Excel / CSV)</div>
       <p class="info-text">Load your daily batch plan from Excel. Pick the file, check the auto-detected column mapping (date · line · SKU · quantity), then apply. Batches of the imported months replace the existing ones; other months stay untouched.</p>
-      <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('mps-file').click()">⬆ Choose Excel/CSV…</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('mps-file').click()">⬆ Choose Excel/CSV…</button>
+        <button class="add-btn" id="mps-clear-month" style="margin-top:0;" onclick="clearMPS('month')" title="Delete this month's batches only">✕ Clear month</button>
+        <button class="add-btn" id="mps-clear-all" style="margin-top:0;border-color:var(--red);color:var(--red);" onclick="clearMPS('all')" title="Delete the entire batch plan (all months); SKU master is kept">✕ Clear all</button>
+      </div>
       <input type="file" id="mps-file" accept=".xlsx,.xlsm,.xls,.csv" style="display:none" onchange="mpsFile(this.files[0]);this.value=''">
       <div id="mps-map" style="margin-top:10px;"></div>
       <div id="mps-preview" style="margin-top:10px;"></div>
@@ -2607,6 +2611,23 @@ function addBatch(){
   render();
 }
 function delBatch(i){ mps.splice(i,1); render(); }
+// Delete the batch plan: this month only, or every month. The SKU master is kept.
+function clearMPS(scope){
+  const m=mk(curDate);
+  const doomed=scope==='month'?mps.filter(r=>mkOfDate(r.date)===m):mps.slice();
+  if(!doomed.length){ alert(scope==='month'?'No batches in this month to clear.':'The batch plan is already empty.'); return; }
+  const months=[...new Set(doomed.map(r=>mkOfDate(r.date)))].length;
+  const qty=doomed.reduce((s,r)=>s+r.qty,0);
+  const what=scope==='month'
+    ? `all ${doomed.length} batches of ${MN[curDate.getMonth()]} ${curDate.getFullYear()}`
+    : `the ENTIRE batch plan: ${doomed.length} batches across ${months} month(s)`;
+  if(!confirm(`Delete ${what} (${hu(qty)} units)?\n\nThe SKU master and line mappings are kept. This cannot be undone.`)) return;
+  mps=scope==='month'?mps.filter(r=>mkOfDate(r.date)!==m):[];
+  document.getElementById('mps-map').innerHTML='';
+  document.getElementById('mps-preview').innerHTML=`<div style="font-size:11px;color:var(--text2);">✕ ${doomed.length} batches deleted.</div>`;
+  mpsCtx=null; mpsRaw=null; mpsUnknown=[];
+  render();
+}
 function mpsResort(){ mps.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.line.localeCompare(b.line)); }
 // Schedule ONE batch (by its mps index) to tgtLine/tgtDay; also clears un-allocated state
 function moveBatch(gi,tl,td2){
