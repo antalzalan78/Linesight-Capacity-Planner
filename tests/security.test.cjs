@@ -14,10 +14,19 @@ test('cloud requests use the signed-in session token and owner id',()=>{
 });
 
 test('email authentication uses the default sign-in link flow',()=>{
-  assert.match(html,/Send sign-in link/);
+  assert.match(html,/Email me a sign-in link/);
+  assert.match(html,/signInWithOtp/);
   assert.match(html,/detectSessionInUrl:true/);
   assert.doesNotMatch(html,/id="auth-code"/);
   assert.doesNotMatch(html,/Verify and sign in/);
+});
+
+test('password sign-in is offered and the typed password is not retained',()=>{
+  assert.match(html,/signInWithPassword/);
+  assert.match(html,/id="auth-password"/);
+  // cleared after a successful sign-in and whenever the dialog is opened
+  assert.match(html,/pwField\.value='';/);
+  assert.match(html,/getElementById\('auth-password'\)\.value='';/);
 });
 
 test('legacy open-access policy is removed from the planner instructions',()=>{
