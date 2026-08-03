@@ -420,6 +420,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       </div>
       <div class="card">
         <div class="section-label">Demand source</div>
+        <p class="info-text">These options set the <strong>default</strong> source for every month. Tick the box at the bottom to use a different source for the selected month only, for example the batch plan for the current month and product-group demand for the months where no MPS exists yet.</p>
         <div style="display:flex;flex-direction:column;gap:10px;">
           <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;">
             <input type="radio" name="demMode" value="pg" checked onchange="demandMode=this.value;render()" style="margin-top:2px;">
@@ -433,6 +434,24 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
             <input type="radio" name="demMode" value="rate" onchange="demandMode=this.value;render()" style="margin-top:2px;">
             <span><strong>Line-level rate (u/h)</strong><br><span style="color:var(--text2);font-size:11px;">Demand calculated from each line's u/h rate</span></span>
           </label>
+        </div>
+        <div class="divider"></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="dm-ovr-on" onchange="toggleDemModeOvr(mk(curDate),this.checked)">
+          <span>Month-specific source — <span id="dm-ovr-month" style="font-family:var(--mono);"></span></span>
+        </label>
+        <div id="dm-ovr-fields" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:6px;">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+              <input type="radio" name="demModeOvr" value="pg" onchange="setDemMode(mk(curDate),this.value)"> Product group demand
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+              <input type="radio" name="demModeOvr" value="mps" onchange="setDemMode(mk(curDate),this.value)"> MPS batch plan
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+              <input type="radio" name="demModeOvr" value="rate" onchange="setDemMode(mk(curDate),this.value)"> Line-level rate (u/h)
+            </label>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -795,7 +814,8 @@ let mps        = [];   // [{date:'YYYY-MM-DD', line, sku, qty}] — daily batch 
 let lineAlias  = {};   // ['CFC-L3'] = 'Line3' — remembered import line-name mappings
 let mpsBasis   = 'units'; // 'units' | 'min' — MPS daily-load capacity basis
 let mpsSetupDef= 0;       // default changeover minutes per batch (used in std-minutes basis)
-let demandMode = 'pg'; // 'pg' | 'rate'
+let demandMode = 'pg'; // default source: 'pg' | 'mps' | 'rate'
+let demModeOvr = {};   // [monthKey] = 'pg' | 'mps' | 'rate' — month-specific demand source
 let curDate    = new Date(); curDate.setDate(1);
 let charts     = {};
 let activeTab  = 'weekly';
@@ -832,7 +852,11 @@ function setPGD(m,k,v){ if(!pgDemand[m])pgDemand[m]={}; pgDemand[m][k]=v; }
 // Monthly demand for a product group from the batch plan (sum of that PG's batch quantities in the month)
 function mpsPGDem(m,k){ return mps.reduce((s,r)=>{ const sk=skuOf(r.sku); return s+((sk&&sk.pg===k&&mkOfDate(r.date)===m)?r.qty:0); },0); }
 // Effective monthly PG demand from the active source: manual entry, or the MPS batch plan
-function pgDem(m,k){ return demandMode==='mps'?mpsPGDem(m,k):getPGD(m,k); }
+// Demand source in force for a given month: the month override, else the default
+function demandModeFor(m){ return demModeOvr[m]||demandMode; }
+function setDemMode(m,v){ demModeOvr[m]=v; render(); }
+function toggleDemModeOvr(m,on){ if(on) demModeOvr[m]=demandModeFor(m); else delete demModeOvr[m]; render(); }
+function pgDem(m,k){ return demandModeFor(m)==='mps'?mpsPGDem(m,k):getPGD(m,k); }
 function getBLO(m,k){ const o=blOpen[m]; return (o&&typeof o==='object')?(o[k]||0):0; }
 function setBLO(m,k,v){ if(!blOpen[m]||typeof blOpen[m]!=='object')blOpen[m]={}; blOpen[m][k]=Math.max(0,v); }
 function totBLOpen(m){ return PGS.reduce((s,g)=>s+blOpenEff(m,g.key),0); }
@@ -929,7 +953,7 @@ function lMoCap(line,weeks,m){ return weeks.reduce((s,w,wi)=>s+lWkCap(line,w,m,w
 
 // Demand of one line for one week
 function lWkDem(line,week,m,wi,weeks){
-  if(demandMode==='rate'){
+  if(demandModeFor(m)==='rate'){
     // use line's own u/h rate
     const p=getP();
     const days=effDays(week,m,wi);
@@ -1720,9 +1744,17 @@ function renderDemandView(){
   const weeks=weeksOf(year,month);
   document.getElementById('pg-summary-month').textContent=`${MN[month]} ${year}`;
 
+  // demand source: default radios + month-specific override
+  const effMode=demandModeFor(m), hasDmOvr=!!demModeOvr[m];
+  document.getElementById('dm-ovr-month').textContent=`${MN[month]} ${year}`;
+  document.getElementById('dm-ovr-on').checked=hasDmOvr;
+  document.getElementById('dm-ovr-fields').style.display=hasDmOvr?'block':'none';
+  document.querySelectorAll('input[name="demModeOvr"]').forEach(rb=>{ rb.checked=hasDmOvr&&rb.value===effMode; });
+  document.querySelectorAll('input[name="demMode"]').forEach(rb=>{ rb.checked=rb.value===demandMode; });
+
   // input grid
   const grid=document.getElementById('pg-demand-grid'); grid.innerHTML='';
-  const fromMps=demandMode==='mps';
+  const fromMps=effMode==='mps';
   let grand=0;
   PGS.forEach(g=>{
     const val=pgDem(m,g.key); grand+=val;
@@ -1739,7 +1771,8 @@ function renderDemandView(){
     `;
     grid.appendChild(row);
   });
-  document.getElementById('pg-total').textContent=hu(grand)+' units'+(fromMps?' · from MPS':'');
+  const srcLabel=effMode==='mps'?'MPS batch plan':effMode==='rate'?'line rate':'product group demand';
+  document.getElementById('pg-total').textContent=hu(grand)+' units · '+srcLabel+(hasDmOvr?' (month override)':'');
 
   // summary table
   const tbl=document.getElementById('pg-summary-table'); tbl.innerHTML='';
@@ -2160,7 +2193,7 @@ function exportCSV(){
   const fmt=d=>d.toLocaleDateString('en-GB',{month:'numeric',day:'numeric'});
   const rows=[];
   rows.push([`LineSight export — ${MN[month]} ${year}`]);
-  rows.push(['Parameters',`${p.shifts} shifts/day × ${p.shiftlen}h`,`OEE ${Math.round(p.oee*100)}%`,`${fmtD(p.days)} days/week`,`demand mode: ${demandMode}`]);
+  rows.push(['Parameters',`${p.shifts} shifts/day × ${p.shiftlen}h`,`OEE ${Math.round(p.oee*100)}%`,`${fmtD(p.days)} days/week`,`demand mode: ${demandModeFor(m)}${demModeOvr[m]?' (month override)':''}`]);
   rows.push([]);
 
   if(activeTab==='chart'){
@@ -2314,7 +2347,7 @@ function exportCSV(){
 // ════════════════════════════════
 function snapshotState(){
   return JSON.parse(JSON.stringify({
-    lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, demandMode,
+    lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, demandMode, demModeOvr,
     mpsBasis, mpsSetupDef, rcDeadline,
     sliders:{
       shifts:  document.getElementById('shifts').value,
@@ -2331,6 +2364,7 @@ function applyState(s){
   wfOvr=s.wfOvr||{};
   skus=s.skus||[]; mps=s.mps||[]; lineAlias=s.lineAlias||{};
   demandMode=s.demandMode||'pg';
+  demModeOvr=s.demModeOvr||{};
   mpsBasis=s.mpsBasis||'units';
   mpsSetupDef=s.mpsSetupDef||0;
   rcDeadline=s.rcDeadline||null;
@@ -3341,7 +3375,7 @@ function buildReport(){
   document.getElementById('report-view').innerHTML=`
     <h1>LineSight — Monthly Capacity Report</h1>
     <div class="rep-sub">${MN[month]} ${year} · generated ${new Date().toLocaleDateString('en-GB')} ·
-      ${p.shifts} shifts × ${p.shiftlen} h · base OEE ${base}% · ${fmtD(p.days)} days/week · demand mode: ${demandMode==='pg'?'product group':demandMode==='mps'?'MPS batch plan':'line rate'}</div>
+      ${p.shifts} shifts × ${p.shiftlen} h · base OEE ${base}% · ${fmtD(p.days)} days/week · demand mode: ${(mo=>mo==='pg'?'product group':mo==='mps'?'MPS batch plan':'line rate')(demandModeFor(m))}</div>
     <div class="kpis">
       <div class="kpi"><div class="l">Capacity</div><div class="v">${hu(M.cap)}</div></div>
       <div class="kpi"><div class="l">Demand</div><div class="v">${hu(M.dem)}</div></div>
@@ -3784,7 +3818,7 @@ function save(){
   captureUndoHistory();
   try{
     localStorage.setItem('ls_planner', JSON.stringify({
-      lines, pgDemand, weekOvr, demandMode, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, mpsBasis, mpsSetupDef, rcDeadline, scenarios,
+      lines, pgDemand, weekOvr, demandMode, demModeOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, mpsBasis, mpsSetupDef, rcDeadline, scenarios,
       curDate: curDate.toISOString(),
       sliders: {
         shifts: document.getElementById('shifts').value,
@@ -3807,7 +3841,7 @@ function resetData(){
     {name:'Line2',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
     {name:'Line3',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
   ];
-  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; skus=[]; mps=[]; lineAlias={}; mpsBasis='units'; mpsSetupDef=0; rcDeadline=null; scenarios=[]; demandMode='pg';
+  pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; skus=[]; mps=[]; lineAlias={}; mpsBasis='units'; mpsSetupDef=0; rcDeadline=null; scenarios=[]; demandMode='pg'; demModeOvr={};
   curDate=new Date(); curDate.setDate(1);
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     const defaults={shifts:'2',shiftlen:'8',oee:'72',days:'5'};
@@ -3842,6 +3876,7 @@ function load(){
     if(d.rcDeadline) rcDeadline=d.rcDeadline;
     if(d.scenarios)  scenarios=d.scenarios;
     if(d.demandMode) demandMode=d.demandMode;
+    if(d.demModeOvr) demModeOvr=d.demModeOvr;
     if(d.curDate)    { curDate=new Date(d.curDate); curDate.setDate(1); }
     if(d.sliders){
       ['shifts','shiftlen','oee','days'].forEach(id=>{
