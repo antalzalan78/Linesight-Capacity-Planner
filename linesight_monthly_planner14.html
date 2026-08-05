@@ -490,10 +490,15 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <div>
       <div class="card">
         <div class="section-label">Workforce availability</div>
-        <p class="info-text">Compare the planned labor-hour requirement with the operators actually available. Available hours = operators × (contract hrs ÷ 5) × working days, reduced by the absence rate. Leave operators at 0 to disable the check. The values below are the <strong>defaults</strong> — tick the box at the bottom to set different values for the selected month.</p>
+        <p class="info-text">Compare the planned labor-hour requirement with the operators actually available. Available hours = operators × (contract hrs ÷ 5) × working days, reduced by the absence rate. Leave operators at 0 to disable the check. The values below are the <strong>defaults</strong> — tick the box at the bottom to set different values for the selected month. Tick <strong>Split by shift</strong> to enter the operators available on each shift separately; the coverage is then also checked shift by shift.</p>
         <div class="param-row">
-          <div class="param-label-row"><span class="param-label">Available operators (headcount)</span></div>
+          <div class="param-label-row"><span class="param-label">Available operators (headcount)</span><span id="wf-ops-note" style="font-size:10px;color:var(--text2);"></span></div>
           <input class="numi" type="number" id="wf-ops" min="0" max="9999" placeholder="0 = off" oninput="workforce.ops=+this.value||0;render()">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;margin-top:6px;">
+            <input type="checkbox" id="wf-split-on" onchange="toggleWfSplit('def',this.checked)">
+            <span>Split by shift</span>
+          </label>
+          <div id="wf-split-fields" style="display:none;gap:6px;margin-top:6px;"></div>
         </div>
         <div class="param-row">
           <div class="param-label-row"><span class="param-label">Contract hours / week</span></div>
@@ -510,8 +515,13 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         </label>
         <div id="wf-ovr-fields" style="display:none;margin-top:12px;padding:10px 12px;background:var(--bg3);border-radius:6px;">
           <div class="param-row">
-            <div class="param-label-row"><span class="param-label">Operators this month</span></div>
+            <div class="param-label-row"><span class="param-label">Operators this month</span><span id="wfo-ops-note" style="font-size:10px;color:var(--text2);"></span></div>
             <input class="numi" type="number" id="wfo-ops" min="0" max="9999" oninput="setWfo('ops',+this.value||0)">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;margin-top:6px;">
+              <input type="checkbox" id="wfo-split-on" onchange="toggleWfSplit('ovr',this.checked)">
+              <span>Split by shift</span>
+            </label>
+            <div id="wfo-split-fields" style="display:none;gap:6px;margin-top:6px;"></div>
           </div>
           <div class="param-row">
             <div class="param-label-row"><span class="param-label">Contract hours / week</span></div>
@@ -545,6 +555,10 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <div class="card">
         <div class="section-label">Weekly coverage — required vs. available</div>
         <div style="overflow-x:auto;"><table class="gt" id="hc-cover-table"></table></div>
+        <div id="hc-shift-wrap" style="display:none;">
+          <div class="section-label" style="margin:14px 0 6px;">Coverage by shift <span style="text-transform:none;letter-spacing:0;color:var(--text2);">— shift operators only, fixed daily staff excluded</span></div>
+          <div style="overflow-x:auto;"><table class="gt" id="hc-shift-table"></table></div>
+        </div>
       </div>
       <div class="card">
         <div class="section-label">Weekly Labor hour trend</div>
@@ -1027,15 +1041,53 @@ function wkHC(week, m, wi){
 // WORKFORCE (monthly override falls back to the defaults)
 // ════════════════════════════════
 function wfFor(m){ return Object.assign({}, workforce, wfOvr[m]||{}); }
+// Copy a workforce record without sharing the per-shift array, so editing a
+// month override never writes through to the defaults
+function wfClone(W){ const c=Object.assign({},W); if(Array.isArray(W.opsS)) c.opsS=W.opsS.slice(); return c; }
+// Optional per-shift split of the available operators. Without it the single
+// total is used exactly as before.
+function wfHasSplit(W){ return Array.isArray(W.opsS)&&W.opsS.some(v=>v!=null&&v!==''); }
+function wfShiftOps(W,si){ return wfHasSplit(W)?(+W.opsS[si]||0):0; }
+function wfTotalOps(W){
+  if(!wfHasSplit(W)) return +W.ops||0;
+  const n=getP().shifts; let s=0;
+  for(let i=0;i<n;i++) s+=(+W.opsS[i]||0);
+  return s;
+}
+// 'def' edits the defaults, 'ovr' the selected month's override
+function wfTarget(scope){
+  if(scope!=='ovr') return workforce;
+  const m=mk(curDate);
+  if(!wfOvr[m]) wfOvr[m]=wfClone(workforce);
+  return wfOvr[m];
+}
+function toggleWfSplit(scope,on){
+  const W=wfTarget(scope), n=getP().shifts;
+  if(on){
+    const per=Math.floor((+W.ops||0)/Math.max(1,n));
+    const rest=(+W.ops||0)-per*Math.max(1,n);
+    W.opsS=Array.from({length:3},(_,i)=>i<n?(per+(i===0?rest:0)):0); // remainder onto shift 1
+  } else {
+    delete W.opsS;
+  }
+  render();
+}
+function setWfShiftOps(scope,si,v){
+  const W=wfTarget(scope);
+  if(!Array.isArray(W.opsS)) W.opsS=[0,0,0];
+  W.opsS[si]=Math.max(0,+v||0);
+  W.ops=wfTotalOps(W); // keep the headline total in step with the split
+  render();
+}
 function toggleWfOvr(on){
   const m=mk(curDate);
-  if(on) wfOvr[m]=Object.assign({}, wfFor(m));
+  if(on) wfOvr[m]=wfClone(wfFor(m));
   else delete wfOvr[m];
   render();
 }
 function setWfo(f,v){
   const m=mk(curDate);
-  if(!wfOvr[m]) wfOvr[m]=Object.assign({}, workforce);
+  if(!wfOvr[m]) wfOvr[m]=wfClone(workforce);
   wfOvr[m][f]=v;
   render();
 }
@@ -1059,16 +1111,39 @@ function renderHeadcount(){
   document.getElementById('wf-ovr-on').checked=hasOvr;
   document.getElementById('wf-ovr-fields').style.display=hasOvr?'block':'none';
   if(hasOvr){
-    [['wfo-ops',eff.ops||''],['wfo-contract',eff.contract],['wfo-abs',eff.absence]].forEach(([id,v])=>{
+    [['wfo-ops',wfTotalOps(eff)||''],['wfo-contract',eff.contract],['wfo-abs',eff.absence]].forEach(([id,v])=>{
       const el=document.getElementById(id);
       if(document.activeElement!==el) el.value=v;
     });
   }
-  const wfSet=eff.ops>0;
+  // per-shift split controls (defaults and, when active, the month override)
+  const nSh=p.shifts;
+  const paintSplit=(scope,W,onId,wrapId,totalId,noteId)=>{
+    const split=wfHasSplit(W);
+    document.getElementById(onId).checked=split;
+    const wrap=document.getElementById(wrapId);
+    wrap.style.display=split?'flex':'none';
+    const totalEl=document.getElementById(totalId);
+    totalEl.disabled=split;
+    totalEl.style.opacity=split?'.55':'';
+    document.getElementById(noteId).textContent=split?`${wfTotalOps(W)} total`:'';
+    if(!split){ wrap.innerHTML=''; return; }
+    if(!wrap.contains(document.activeElement)){
+      wrap.innerHTML=Array.from({length:nSh},(_,si)=>`
+        <div style="flex:1;text-align:center;">
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text2);margin-bottom:2px;">S${si+1}</div>
+          <input class="numi" type="number" min="0" max="9999" style="width:100%;" value="${wfShiftOps(W,si)}" oninput="setWfShiftOps('${scope}',${si},this.value)">
+        </div>`).join('');
+    }
+  };
+  paintSplit('def',workforce,'wf-split-on','wf-split-fields','wf-ops','wf-ops-note');
+  if(hasOvr) paintSplit('ovr',wfOvr[m],'wfo-split-on','wfo-split-fields','wfo-ops','wfo-ops-note');
+  const effOps=wfTotalOps(eff), effSplit=wfHasSplit(eff);
+  const wfSet=effOps>0;
   const dailyH=eff.contract/5, absF=1-eff.absence/100;
   const wkReq  =weeks.map((w,wi)=>wkHC(w,m,wi));
   const wkAvail=weeks.map((w,wi)=>LineSightCalc.availableLaborHours({
-    operators:eff.ops,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+    operators:effOps,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
   }));
   // operators needed per week for full coverage (absence already grossed in via absF)
   const opsNeeded=weeks.map((w,wi)=>{
@@ -1078,7 +1153,7 @@ function renderHeadcount(){
     });
   });
   const peakNeed=Math.max(0,...opsNeeded);
-  const hireGap=wfSet?Math.max(0,peakNeed-eff.ops):null;
+  const hireGap=wfSet?Math.max(0,peakNeed-effOps):null;
 
   // ── Monthly summary strip ──
   let totFTE=0, totShift=0, totDay=0;
@@ -1093,7 +1168,7 @@ function renderHeadcount(){
     <div class="metric"><div class="metric-label">Fixed daily staff</div><div class="metric-val">${hu(totDay)}</div><div class="metric-sub">labor hrs</div></div>
     <div class="metric"><div class="metric-label">Avg labor hrs / week</div><div class="metric-val">${hu(avgWk)}</div><div class="metric-sub">${weeks.length} weeks</div></div>
     <div class="metric"><div class="metric-label">Peak week</div><div class="metric-val warn">${hu(Math.max(...wkReq))}</div><div class="metric-sub">labor hrs</div></div>
-    <div class="metric"><div class="metric-label">Available operators</div><div class="metric-val">${wfSet?eff.ops:'—'}</div><div class="metric-sub">${wfSet?(Math.round(dailyH*absF*10)/10)+' eff. h/day each'+(hasOvr?' · month override':''):'set in Workforce card'}</div></div>
+    <div class="metric"><div class="metric-label">Available operators</div><div class="metric-val">${wfSet?effOps:'—'}</div><div class="metric-sub">${wfSet?(Math.round(dailyH*absF*10)/10)+' eff. h/day each'+(hasOvr?' · month override':''):'set in Workforce card'}</div></div>
     <div class="metric"><div class="metric-label">Coverage</div><div class="metric-val ${wfSet?covCls:''}">${wfSet?cov+'%':'—'}</div><div class="metric-sub">available vs. required hrs</div></div>
     <div class="metric"><div class="metric-label">Hiring suggestion</div><div class="metric-val ${hireGap===null?'':hireGap>0?'danger':'ok'}">${hireGap===null?'—':hireGap>0?'+'+hireGap:'✓ 0'}</div><div class="metric-sub">${hireGap===null?'set workforce first':hireGap>0?'operators for full coverage (absence incl.)':'headcount covers the plan'}</div></div>
   `;
@@ -1114,7 +1189,7 @@ function renderHeadcount(){
       const req=wkReq[wi], avail=wkAvail[wi];
       const wcov=req>0?Math.round(avail/req*100):null;
       const need=opsNeeded[wi];
-      const gap=need-eff.ops;
+      const gap=need-effOps;
       const tr=cb.insertRow();
       tr.innerHTML=`
         <td style="font-family:var(--mono);font-weight:500;">${w.label}</td>
@@ -1127,7 +1202,7 @@ function renderHeadcount(){
       `;
     });
     const trT=cb.insertRow(); trT.className='tot';
-    const gapM=peakNeed-eff.ops;
+    const gapM=peakNeed-effOps;
     trT.innerHTML=`
       <td colspan="2">MONTH</td>
       <td class="c">${hu(totFTE)}</td>
@@ -1136,6 +1211,57 @@ function renderHeadcount(){
       <td class="c">${peakNeed}</td>
       <td class="c"><span class="pill ${gapM>0?'pill-danger':'pill-ok'}">${gapM>0?'Hire '+gapM:'OK'}</span></td>
     `;
+  }
+
+  // ── Coverage by shift (only when the available operators are split per shift) ──
+  const shiftWrap=document.getElementById('hc-shift-wrap');
+  shiftWrap.style.display=(wfSet&&effSplit)?'block':'none';
+  if(wfSet&&effSplit){
+    const st=document.getElementById('hc-shift-table'); st.innerHTML='';
+    const shr=st.createTHead().insertRow();
+    ['Shift','Lines running','Required hrs','Available hrs','Coverage','Ops needed','Status'].forEach((h,i)=>{
+      const th=document.createElement('th'); th.textContent=h;
+      th.className=i===0?'':'c'; th.style.whiteSpace='nowrap'; shr.appendChild(th);
+    });
+    const sb=st.createTBody();
+    let sumReq=0,sumAvail=0;
+    for(let si=0; si<nSh; si++){
+      const running=lines.filter(l=>lineActive(l,si));
+      // required labor hours on this shift across the month (shift operators only)
+      const req=weeks.reduce((s,w,wi)=>{
+        const d=effDays(w,m,wi);
+        return s+running.reduce((ls,l)=>ls+shiftHC(l,si)*p.shiftlen*d,0);
+      },0);
+      const ops=wfShiftOps(eff,si);
+      const avail=weeks.reduce((s,w,wi)=>s+LineSightCalc.availableLaborHours({
+        operators:ops,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+      }),0);
+      const covS=req>0?Math.round(avail/req*100):null;
+      const needS=Math.max(0,...weeks.map((w,wi)=>{
+        const d=effDays(w,m,wi);
+        const rq=running.reduce((ls,l)=>ls+shiftHC(l,si)*p.shiftlen*d,0);
+        return LineSightCalc.operatorsNeeded({requiredHours:rq,contractHours:eff.contract,absenceRate:eff.absence,workingDays:d});
+      }));
+      const gapS=needS-ops;
+      sumReq+=req; sumAvail+=avail;
+      sb.insertRow().innerHTML=`
+        <td style="font-family:var(--mono);font-weight:500;">S${si+1}</td>
+        <td style="font-size:11px;color:var(--text2);">${running.length?running.map(l=>l.name).join(', '):'none'}</td>
+        <td class="c" style="font-family:var(--mono);">${hu(req)}</td>
+        <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(avail)} <span style="color:var(--text2);font-size:10px;">(${ops} op)</span></td>
+        <td class="c" style="font-family:var(--mono);font-weight:500;color:${covS===null?'var(--text2)':covS>=100?'var(--green)':covS>=90?'var(--yellow)':'var(--red)'};">${covS===null?'—':covS+'%'}</td>
+        <td class="c" style="font-family:var(--mono);">${needS}</td>
+        <td class="c"><span class="pill ${gapS>0?'pill-danger':'pill-ok'}">${gapS>0?'Short '+gapS+' op':'OK'}</span></td>`;
+    }
+    const sTot=sb.insertRow(); sTot.className='tot';
+    const sCov=sumReq>0?Math.round(sumAvail/sumReq*100):0;
+    sTot.innerHTML=`
+      <td colspan="2">ALL SHIFTS</td>
+      <td class="c">${hu(sumReq)}</td>
+      <td class="c" style="color:var(--green);">${hu(sumAvail)}</td>
+      <td class="c" style="color:${sCov>=100?'var(--green)':sCov>=90?'var(--yellow)':'var(--red)'};">${sCov}%</td>
+      <td class="c">${effOps}</td>
+      <td class="c"><span class="pill pill-ok">available</span></td>`;
   }
 
   // ── Weekly labor hrs table by line ──
@@ -1887,9 +2013,9 @@ function monthKPI(d){
   const closing=series.length?series[series.length-1].bl:0;
   const W=wfFor(m);
   let coverage=null;
-  if(W.ops>0&&labor>0){
+  if(wfTotalOps(W)>0&&labor>0){
     const dailyH=W.contract/5, absF=1-W.absence/100;
-    const avail=weeks.reduce((s,w,wi)=>s+W.ops*dailyH*absF*effDays(w,m,wi),0);
+    const avail=weeks.reduce((s,w,wi)=>s+wfTotalOps(W)*dailyH*absF*effDays(w,m,wi),0);
     coverage=Math.round(avail/labor*100);
   }
   const rows=mps.filter(r=>mkOfDate(r.date)===m);
@@ -2110,11 +2236,11 @@ async function runAI(){
 
   // Workforce coverage
   const W=wfFor(m);
-  if(W.ops>0){
+  if(wfTotalOps(W)>0){
     const dailyH=W.contract/5, absF=1-W.absence/100;
     let req=0, avail=0;
-    weeks.forEach((w,wi)=>{ req+=wkHC(w,m,wi); avail+=W.ops*dailyH*absF*effDays(w,m,wi); });
-    summary+=`\nWORKFORCE: ${W.ops} operators available, ${W.contract}h/week contract, ${W.absence}% absence. Required ${Math.round(req).toLocaleString()} labor hrs vs available ${Math.round(avail).toLocaleString()} labor hrs (coverage ${pct(avail,req)}%).\n`;
+    weeks.forEach((w,wi)=>{ req+=wkHC(w,m,wi); avail+=wfTotalOps(W)*dailyH*absF*effDays(w,m,wi); });
+    summary+=`\nWORKFORCE: ${wfTotalOps(W)} operators available, ${W.contract}h/week contract, ${W.absence}% absence. Required ${Math.round(req).toLocaleString()} labor hrs vs available ${Math.round(avail).toLocaleString()} labor hrs (coverage ${pct(avail,req)}%).\n`;
   }
 
   // PG demand
@@ -2276,21 +2402,38 @@ function exportCSV(){
       rows.push([w.label,`${fmt(w.start)}–${fmt(w.end)}`,days,...vals,vals.reduce((s,v)=>s+v,0)]);
     });
     const W=wfFor(m);
-    if(W.ops>0){
+    if(wfTotalOps(W)>0){
       const dailyH=W.contract/5, absF=1-W.absence/100;
       rows.push([]);
-      rows.push(['WEEKLY COVERAGE',`${W.ops} operators`,`${W.contract} h/week`,`absence ${W.absence}%`,wfOvr[m]?'month override':'default workforce']);
+      rows.push(['WEEKLY COVERAGE',`${wfTotalOps(W)} operators`,`${W.contract} h/week`,`absence ${W.absence}%`,wfOvr[m]?'month override':'default workforce']);
       rows.push(['Week','Days','Required hrs','Available hrs','Coverage %','Ops needed','Gap']);
       let peakNeed=0;
       weeks.forEach((w,wi)=>{
         const days=effDays(w,m,wi);
         const req=wkHC(w,m,wi);
-        const avail=Math.round(W.ops*dailyH*absF*days);
+        const avail=Math.round(wfTotalOps(W)*dailyH*absF*days);
         const need=days>0?Math.ceil(req/(dailyH*absF*days)):0;
         peakNeed=Math.max(peakNeed,need);
-        rows.push([w.label,days,req,avail,req>0?Math.round(avail/req*100):'',need,Math.max(0,need-W.ops)]);
+        rows.push([w.label,days,req,avail,req>0?Math.round(avail/req*100):'',need,Math.max(0,need-wfTotalOps(W))]);
       });
-      rows.push(['HIRING SUGGESTION','','','','','',Math.max(0,peakNeed-W.ops)]);
+      rows.push(['HIRING SUGGESTION','','','','','',Math.max(0,peakNeed-wfTotalOps(W))]);
+      if(wfHasSplit(W)){
+        rows.push([]);
+        rows.push(['COVERAGE BY SHIFT','shift operators only']);
+        rows.push(['Shift','Lines running','Required hrs','Available hrs','Operators','Coverage %','Ops needed','Gap']);
+        for(let si=0; si<p.shifts; si++){
+          const running=lines.filter(l=>lineActive(l,si));
+          let req=0, avail=0, need=0;
+          weeks.forEach((w,wi)=>{
+            const d=effDays(w,m,wi);
+            const rq=running.reduce((s,l)=>s+shiftHC(l,si)*p.shiftlen*d,0);
+            req+=rq; avail+=Math.round(wfShiftOps(W,si)*dailyH*absF*d);
+            need=Math.max(need,d>0?Math.ceil(rq/(dailyH*absF*d)):0);
+          });
+          rows.push([`S${si+1}`,running.map(l=>l.name).join(', ')||'none',Math.round(req),avail,wfShiftOps(W,si),
+                     req>0?Math.round(avail/req*100):'',need,Math.max(0,need-wfShiftOps(W,si))]);
+        }
+      }
     }
   }
   else if(activeTab==='backlog'){
@@ -2389,9 +2532,9 @@ function computeMetrics(){
   const closing=series.length?series[series.length-1].bl:0;
   let coverage=null;
   const W=wfFor(m);
-  if(W.ops>0&&labor>0){
+  if(wfTotalOps(W)>0&&labor>0){
     const dailyH=W.contract/5, absF=1-W.absence/100;
-    const avail=weeks.reduce((s,w,wi)=>s+W.ops*dailyH*absF*effDays(w,m,wi),0);
+    const avail=weeks.reduce((s,w,wi)=>s+wfTotalOps(W)*dailyH*absF*effDays(w,m,wi),0);
     coverage=Math.round(avail/labor*100);
   }
   return {cap,dem,util:pct(dem,cap),free:cap-dem,labor,coverage,closing,
@@ -3364,7 +3507,7 @@ function buildReport(){
     ?`Opening backlog <strong>${hu(opening)}</strong> units → closing <strong class="${M.closing>0?'bad':'good'}">${hu(M.closing)}</strong> units.`
     :'No backlog in the plan.';
   const covLine=M.coverage!==null
-    ?` Workforce coverage <strong class="${M.coverage>=100?'good':M.coverage>=90?'warn':'bad'}">${M.coverage}%</strong> (${workforce.ops} operators, ${workforce.contract} h/week, ${workforce.absence}% absence).`
+    ?(W2=>` Workforce coverage <strong class="${M.coverage>=100?'good':M.coverage>=90?'warn':'bad'}">${M.coverage}%</strong> (${wfTotalOps(W2)} operators${wfHasSplit(W2)?' ['+Array.from({length:getP().shifts},(_,i)=>wfShiftOps(W2,i)).join('/')+']':''}, ${W2.contract} h/week, ${W2.absence}% absence).`)(wfFor(m))
     :'';
   const evs=Object.entries(calEvents)
     .map(([k,v])=>{const [y,mo,da]=k.split('-').map(Number); return {date:new Date(y,mo-1,da),label:v.label};})
