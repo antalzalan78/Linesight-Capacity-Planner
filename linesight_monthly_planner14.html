@@ -211,8 +211,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
             <th style="width:70px;">Line</th>
             <th class="c" style="width:50px;">Cap.(u/h)</th>
             <th class="c" style="width:46px;" title="Line OEE %. Leave empty to use the base OEE slider. Weekly OEE overrides scale all lines proportionally.">OEE%</th>
-            <th class="c" style="width:100px;" title="Per shift: the S-button turns the shift on/off for this line (capacity counts only running shifts); the box below is the operators on that shift">HC/shift</th>
-            <th class="c" style="width:50px;" title="Fixed daily staff">HC/day</th>
+            <th class="c" style="width:104px;" title="Direct headcount per shift: the operators running the line. The S-button turns the shift on/off for this line (capacity counts only running shifts).">Direct HC</th>
+            <th class="c" style="width:104px;" title="Indirect headcount per shift: supervisor, technician, QC and other support staff on that shift.">Indirect HC</th>
             <th style="min-width:84px;">Product group</th>
             <th style="width:22px;"></th>
           </tr></thead>
@@ -501,6 +501,15 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
           <div id="wf-split-fields" style="display:none;gap:6px;margin-top:6px;"></div>
         </div>
         <div class="param-row">
+          <div class="param-label-row"><span class="param-label">Available indirect staff</span><span id="wfi-ops-note" style="font-size:10px;color:var(--text2);"></span></div>
+          <input class="numi" type="number" id="wfi-ops" min="0" max="9999" placeholder="0 = off" oninput="workforce.opsI=+this.value||0;render()">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;margin-top:6px;">
+            <input type="checkbox" id="wfi-split-on" onchange="toggleWfSplit('defI',this.checked)">
+            <span>Split by shift</span>
+          </label>
+          <div id="wfi-split-fields" style="display:none;gap:6px;margin-top:6px;"></div>
+        </div>
+        <div class="param-row">
           <div class="param-label-row"><span class="param-label">Contract hours / week</span></div>
           <input class="numi" type="number" id="wf-contract" min="1" max="80" oninput="workforce.contract=+this.value||40;render()">
         </div>
@@ -536,8 +545,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <div class="card" style="margin-top:1.25rem;">
         <div class="section-label">Line detail — <span id="hc-month-label"></span></div>
         <p class="info-text">
-          <strong>HC/shift</strong> = rotating operators per shift (set per active shift on the Weekly View; the split shows as e.g. 4/3).<br>
-          <strong>HC/day</strong> = fixed daily staff: supervisor, technician, QC (counted once per day regardless of shifts).
+          <strong>Direct</strong> = operators running the line, per shift (set on the Weekly View; the split shows as e.g. 4/3).<br>
+          <strong>Indirect</strong> = support staff per shift: supervisor, technician, QC.
         </p>
         <table class="gt" id="hc-line-table"></table>
       </div>
@@ -555,6 +564,10 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       <div class="card">
         <div class="section-label">Weekly coverage — required vs. available</div>
         <div style="overflow-x:auto;"><table class="gt" id="hc-cover-table"></table></div>
+        <div id="hc-cat-wrap" style="display:none;">
+          <div class="section-label" style="margin:14px 0 6px;">Coverage by category <span style="text-transform:none;letter-spacing:0;color:var(--text2);">— direct operators vs. indirect support staff</span></div>
+          <div style="overflow-x:auto;"><table class="gt" id="hc-cat-table"></table></div>
+        </div>
         <div id="hc-shift-wrap" style="display:none;">
           <div class="section-label" style="margin:14px 0 6px;">Coverage by shift <span style="text-transform:none;letter-spacing:0;color:var(--text2);">— shift operators only, fixed daily staff excluded</span></div>
           <div style="overflow-x:auto;"><table class="gt" id="hc-shift-table"></table></div>
@@ -1001,32 +1014,40 @@ function lineActive(line, si){ return line.actS ? line.actS[si]!==false : true; 
 function nActiveShifts(line){ const n=getP().shifts; let c=0; for(let si=0; si<n; si++) if(lineActive(line,si)) c++; return c; }
 // Per-shift operator count. line.hcS[si] holds a shift-specific value; when absent
 // it falls back to the legacy scalar hc (same headcount on every shift).
+// Direct headcount on a shift: line operators running the line.
+// hcS[si] is the per-shift value; without it the legacy single hc applies to every shift.
 function shiftHC(line, si){ return (line.hcS && line.hcS[si]!=null) ? (+line.hcS[si]||0) : (+line.hc||0); }
-// Operators summed across the shifts the line actually runs
+// Indirect headcount on a shift: supervisor, technician, QC and other support staff.
+// hcIS[si] is the per-shift value; legacy plans carry hcDay (counted once per day),
+// which is treated as indirect staff on the first shift so their hours stay identical.
+function shiftHCI(line, si){
+  if(line.hcIS && line.hcIS[si]!=null) return +line.hcIS[si]||0;
+  return si===0 ? (+line.hcDay||0) : 0;
+}
+// Headcount summed across the shifts the line actually runs
 function totShiftHC(line){ const n=getP().shifts; let s=0; for(let si=0; si<n; si++) if(lineActive(line,si)) s+=shiftHC(line,si); return s; }
-// Per-shift split label for the active shifts, e.g. "4/3" ("-" = shift off)
+function totShiftHCI(line){ const n=getP().shifts; let s=0; for(let si=0; si<n; si++) if(lineActive(line,si)) s+=shiftHCI(line,si); return s; }
+// Per-shift split labels for the active shifts, e.g. "4/3" ("-" = shift off)
 function shiftHCLabel(line){ const n=getP().shifts; return Array.from({length:n},(_,si)=>lineActive(line,si)?shiftHC(line,si):'-').join('/'); }
-// Labor hours for one line for one week:
-//   shift operators : sum of per-shift operators × shiftlen × working days
-//   fixed daily     : hcDay × shiftlen × working days (one shift-length per day)
+function shiftHCILabel(line){ const n=getP().shifts; return Array.from({length:n},(_,si)=>lineActive(line,si)?shiftHCI(line,si):'-').join('/'); }
+// Labor hours for one line for one week = (direct + indirect headcount on the
+// shifts the line runs) × shift length × working days
 function lWkHC(line, week, m, wi){
   const p = getP();
   const days = effDays(week,m,wi);
-  const shift = totShiftHC(line) * p.shiftlen * days;
-  const daily = (line.hcDay||0) * p.shiftlen * days;
-  return Math.round(shift + daily);
+  return Math.round((totShiftHC(line)+totShiftHCI(line)) * p.shiftlen * days);
 }
-// shift-only labor hours (for breakdown)
+// direct-only labor hours (for breakdown)
 function lWkHCshift(line, week, m, wi){
   const p = getP();
   const days = effDays(week,m,wi);
   return Math.round(totShiftHC(line) * p.shiftlen * days);
 }
-// day-only labor hours (for breakdown)
+// indirect-only labor hours (for breakdown)
 function lWkHCday(line, week, m, wi){
   const p = getP();
   const days = effDays(week,m,wi);
-  return Math.round((line.hcDay||0) * p.shiftlen * days);
+  return Math.round(totShiftHCI(line) * p.shiftlen * days);
 }
 // Monthly labor hrs for one line
 function lMoHC(line, weeks, m){
@@ -1043,40 +1064,50 @@ function wkHC(week, m, wi){
 function wfFor(m){ return Object.assign({}, workforce, wfOvr[m]||{}); }
 // Copy a workforce record without sharing the per-shift array, so editing a
 // month override never writes through to the defaults
-function wfClone(W){ const c=Object.assign({},W); if(Array.isArray(W.opsS)) c.opsS=W.opsS.slice(); return c; }
+function wfClone(W){
+  const c=Object.assign({},W);
+  if(Array.isArray(W.opsS)) c.opsS=W.opsS.slice();
+  if(Array.isArray(W.opsIS)) c.opsIS=W.opsIS.slice();
+  return c;
+}
 // Optional per-shift split of the available operators. Without it the single
 // total is used exactly as before.
-function wfHasSplit(W){ return Array.isArray(W.opsS)&&W.opsS.some(v=>v!=null&&v!==''); }
-function wfShiftOps(W,si){ return wfHasSplit(W)?(+W.opsS[si]||0):0; }
-function wfTotalOps(W){
-  if(!wfHasSplit(W)) return +W.ops||0;
+// 'dir' = direct operators (ops/opsS), 'ind' = indirect staff (opsI/opsIS)
+const WF_F={dir:{tot:'ops',arr:'opsS'},ind:{tot:'opsI',arr:'opsIS'}};
+function wfHasSplit(W,k){ const a=W[WF_F[k||'dir'].arr]; return Array.isArray(a)&&a.some(v=>v!=null&&v!==''); }
+function wfShiftOps(W,si,k){ k=k||'dir'; return wfHasSplit(W,k)?(+W[WF_F[k].arr][si]||0):0; }
+function wfTotalOps(W,k){
+  k=k||'dir';
+  if(!wfHasSplit(W,k)) return +W[WF_F[k].tot]||0;
   const n=getP().shifts; let s=0;
-  for(let i=0;i<n;i++) s+=(+W.opsS[i]||0);
+  for(let i=0;i<n;i++) s+=(+W[WF_F[k].arr][i]||0);
   return s;
 }
-// 'def' edits the defaults, 'ovr' the selected month's override
+// scope: 'def'/'ovr' for direct, 'defI'/'ovrI' for indirect
+function wfKind(scope){ return /I$/.test(scope)?'ind':'dir'; }
 function wfTarget(scope){
-  if(scope!=='ovr') return workforce;
+  if(!/^ovr/.test(scope)) return workforce;
   const m=mk(curDate);
   if(!wfOvr[m]) wfOvr[m]=wfClone(workforce);
   return wfOvr[m];
 }
 function toggleWfSplit(scope,on){
-  const W=wfTarget(scope), n=getP().shifts;
+  const W=wfTarget(scope), k=wfKind(scope), f=WF_F[k], n=getP().shifts;
   if(on){
-    const per=Math.floor((+W.ops||0)/Math.max(1,n));
-    const rest=(+W.ops||0)-per*Math.max(1,n);
-    W.opsS=Array.from({length:3},(_,i)=>i<n?(per+(i===0?rest:0)):0); // remainder onto shift 1
+    const tot=+W[f.tot]||0;
+    const per=Math.floor(tot/Math.max(1,n));
+    const rest=tot-per*Math.max(1,n);
+    W[f.arr]=Array.from({length:3},(_,i)=>i<n?(per+(i===0?rest:0)):0); // remainder onto shift 1
   } else {
-    delete W.opsS;
+    delete W[f.arr];
   }
   render();
 }
 function setWfShiftOps(scope,si,v){
-  const W=wfTarget(scope);
-  if(!Array.isArray(W.opsS)) W.opsS=[0,0,0];
-  W.opsS[si]=Math.max(0,+v||0);
-  W.ops=wfTotalOps(W); // keep the headline total in step with the split
+  const W=wfTarget(scope), k=wfKind(scope), f=WF_F[k];
+  if(!Array.isArray(W[f.arr])) W[f.arr]=[0,0,0];
+  W[f.arr][si]=Math.max(0,+v||0);
+  W[f.tot]=wfTotalOps(W,k); // keep the headline total in step with the split
   render();
 }
 function toggleWfOvr(on){
@@ -1102,7 +1133,7 @@ function renderHeadcount(){
   document.getElementById('hc-month-label').textContent=`${MN[month]} ${year}`;
 
   // ── Workforce inputs (focus-guarded); defaults + monthly override ──
-  [['wf-ops',workforce.ops||''],['wf-contract',workforce.contract],['wf-abs',workforce.absence]].forEach(([id,v])=>{
+  [['wf-ops',workforce.ops||''],['wfi-ops',workforce.opsI||''],['wf-contract',workforce.contract],['wf-abs',workforce.absence]].forEach(([id,v])=>{
     const el=document.getElementById(id);
     if(document.activeElement!==el) el.value=v;
   });
@@ -1119,31 +1150,33 @@ function renderHeadcount(){
   // per-shift split controls (defaults and, when active, the month override)
   const nSh=p.shifts;
   const paintSplit=(scope,W,onId,wrapId,totalId,noteId)=>{
-    const split=wfHasSplit(W);
+    const k=wfKind(scope), split=wfHasSplit(W,k);
     document.getElementById(onId).checked=split;
     const wrap=document.getElementById(wrapId);
     wrap.style.display=split?'flex':'none';
     const totalEl=document.getElementById(totalId);
     totalEl.disabled=split;
     totalEl.style.opacity=split?'.55':'';
-    document.getElementById(noteId).textContent=split?`${wfTotalOps(W)} total`:'';
+    document.getElementById(noteId).textContent=split?`${wfTotalOps(W,k)} total`:'';
     if(!split){ wrap.innerHTML=''; return; }
     if(!wrap.contains(document.activeElement)){
       wrap.innerHTML=Array.from({length:nSh},(_,si)=>`
         <div style="flex:1;text-align:center;">
           <div style="font-family:var(--mono);font-size:9px;color:var(--text2);margin-bottom:2px;">S${si+1}</div>
-          <input class="numi" type="number" min="0" max="9999" style="width:100%;" value="${wfShiftOps(W,si)}" oninput="setWfShiftOps('${scope}',${si},this.value)">
+          <input class="numi" type="number" min="0" max="9999" style="width:100%;" value="${wfShiftOps(W,si,k)}" oninput="setWfShiftOps('${scope}',${si},this.value)">
         </div>`).join('');
     }
   };
   paintSplit('def',workforce,'wf-split-on','wf-split-fields','wf-ops','wf-ops-note');
+  paintSplit('defI',workforce,'wfi-split-on','wfi-split-fields','wfi-ops','wfi-ops-note');
   if(hasOvr) paintSplit('ovr',wfOvr[m],'wfo-split-on','wfo-split-fields','wfo-ops','wfo-ops-note');
   const effOps=wfTotalOps(eff), effSplit=wfHasSplit(eff);
-  const wfSet=effOps>0;
+  const effOpsI=wfTotalOps(eff,'ind'), effSplitI=wfHasSplit(eff,'ind');
+  const wfSet=(effOps+effOpsI)>0;
   const dailyH=eff.contract/5, absF=1-eff.absence/100;
   const wkReq  =weeks.map((w,wi)=>wkHC(w,m,wi));
   const wkAvail=weeks.map((w,wi)=>LineSightCalc.availableLaborHours({
-    operators:effOps,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+    operators:effOps+effOpsI,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
   }));
   // operators needed per week for full coverage (absence already grossed in via absF)
   const opsNeeded=weeks.map((w,wi)=>{
@@ -1153,7 +1186,7 @@ function renderHeadcount(){
     });
   });
   const peakNeed=Math.max(0,...opsNeeded);
-  const hireGap=wfSet?Math.max(0,peakNeed-effOps):null;
+  const hireGap=wfSet?Math.max(0,peakNeed-(effOps+effOpsI)):null;
 
   // ── Monthly summary strip ──
   let totFTE=0, totShift=0, totDay=0;
@@ -1164,11 +1197,11 @@ function renderHeadcount(){
   const covCls=cov>=100?'ok':cov>=90?'warn':'danger';
   document.getElementById('hc-strip').innerHTML=`
     <div class="metric"><div class="metric-label">Total labor hrs / month</div><div class="metric-val ok">${hu(totFTE)}</div><div class="metric-sub">${lines.length} lines</div></div>
-    <div class="metric"><div class="metric-label">Shift operators</div><div class="metric-val">${hu(totShift)}</div><div class="metric-sub">labor hrs</div></div>
-    <div class="metric"><div class="metric-label">Fixed daily staff</div><div class="metric-val">${hu(totDay)}</div><div class="metric-sub">labor hrs</div></div>
+    <div class="metric"><div class="metric-label">Direct labor hrs</div><div class="metric-val">${hu(totShift)}</div><div class="metric-sub">labor hrs</div></div>
+    <div class="metric"><div class="metric-label">Indirect labor hrs</div><div class="metric-val">${hu(totDay)}</div><div class="metric-sub">labor hrs</div></div>
     <div class="metric"><div class="metric-label">Avg labor hrs / week</div><div class="metric-val">${hu(avgWk)}</div><div class="metric-sub">${weeks.length} weeks</div></div>
     <div class="metric"><div class="metric-label">Peak week</div><div class="metric-val warn">${hu(Math.max(...wkReq))}</div><div class="metric-sub">labor hrs</div></div>
-    <div class="metric"><div class="metric-label">Available operators</div><div class="metric-val">${wfSet?effOps:'—'}</div><div class="metric-sub">${wfSet?(Math.round(dailyH*absF*10)/10)+' eff. h/day each'+(hasOvr?' · month override':''):'set in Workforce card'}</div></div>
+    <div class="metric"><div class="metric-label">Available headcount</div><div class="metric-val">${wfSet?(effOps+effOpsI):'—'}</div><div class="metric-sub">${wfSet?`${effOps} direct + ${effOpsI} indirect`+(hasOvr?' · month override':''):'set in Workforce card'}</div></div>
     <div class="metric"><div class="metric-label">Coverage</div><div class="metric-val ${wfSet?covCls:''}">${wfSet?cov+'%':'—'}</div><div class="metric-sub">available vs. required hrs</div></div>
     <div class="metric"><div class="metric-label">Hiring suggestion</div><div class="metric-val ${hireGap===null?'':hireGap>0?'danger':'ok'}">${hireGap===null?'—':hireGap>0?'+'+hireGap:'✓ 0'}</div><div class="metric-sub">${hireGap===null?'set workforce first':hireGap>0?'operators for full coverage (absence incl.)':'headcount covers the plan'}</div></div>
   `;
@@ -1189,7 +1222,7 @@ function renderHeadcount(){
       const req=wkReq[wi], avail=wkAvail[wi];
       const wcov=req>0?Math.round(avail/req*100):null;
       const need=opsNeeded[wi];
-      const gap=need-effOps;
+      const gap=need-(effOps+effOpsI);
       const tr=cb.insertRow();
       tr.innerHTML=`
         <td style="font-family:var(--mono);font-weight:500;">${w.label}</td>
@@ -1202,7 +1235,7 @@ function renderHeadcount(){
       `;
     });
     const trT=cb.insertRow(); trT.className='tot';
-    const gapM=peakNeed-effOps;
+    const gapM=peakNeed-(effOps+effOpsI);
     trT.innerHTML=`
       <td colspan="2">MONTH</td>
       <td class="c">${hu(totFTE)}</td>
@@ -1213,55 +1246,94 @@ function renderHeadcount(){
     `;
   }
 
-  // ── Coverage by shift (only when the available operators are split per shift) ──
+  // ── Coverage by shift, split into direct and indirect ──
+  // required labor hours on one shift for one category across the month
+  const shiftReq=(si,kind)=>weeks.reduce((s,w,wi)=>{
+    const d=effDays(w,m,wi);
+    return s+lines.filter(l=>lineActive(l,si)).reduce((ls,l)=>ls+(kind==='ind'?shiftHCI(l,si):shiftHC(l,si))*p.shiftlen*d,0);
+  },0);
+  const availFor=ops=>weeks.reduce((s,w,wi)=>s+LineSightCalc.availableLaborHours({
+    operators:ops,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+  }),0);
+  const anySplit=effSplit||effSplitI;
   const shiftWrap=document.getElementById('hc-shift-wrap');
-  shiftWrap.style.display=(wfSet&&effSplit)?'block':'none';
-  if(wfSet&&effSplit){
+  shiftWrap.style.display=(wfSet&&anySplit)?'block':'none';
+  if(wfSet&&anySplit){
     const st=document.getElementById('hc-shift-table'); st.innerHTML='';
     const shr=st.createTHead().insertRow();
-    ['Shift','Lines running','Required hrs','Available hrs','Coverage','Ops needed','Status'].forEach((h,i)=>{
+    ['Shift','Lines running','Direct req','Direct avail','Direct %','Indirect req','Indirect avail','Indirect %'].forEach((h,i)=>{
       const th=document.createElement('th'); th.textContent=h;
       th.className=i===0?'':'c'; th.style.whiteSpace='nowrap'; shr.appendChild(th);
     });
     const sb=st.createTBody();
-    let sumReq=0,sumAvail=0;
-    for(let si=0; si<nSh; si++){
-      const running=lines.filter(l=>lineActive(l,si));
-      // required labor hours on this shift across the month (shift operators only)
-      const req=weeks.reduce((s,w,wi)=>{
-        const d=effDays(w,m,wi);
-        return s+running.reduce((ls,l)=>ls+shiftHC(l,si)*p.shiftlen*d,0);
-      },0);
-      const ops=wfShiftOps(eff,si);
-      const avail=weeks.reduce((s,w,wi)=>s+LineSightCalc.availableLaborHours({
-        operators:ops,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
-      }),0);
-      const covS=req>0?Math.round(avail/req*100):null;
-      const needS=Math.max(0,...weeks.map((w,wi)=>{
-        const d=effDays(w,m,wi);
-        const rq=running.reduce((ls,l)=>ls+shiftHC(l,si)*p.shiftlen*d,0);
-        return LineSightCalc.operatorsNeeded({requiredHours:rq,contractHours:eff.contract,absenceRate:eff.absence,workingDays:d});
-      }));
-      const gapS=needS-ops;
-      sumReq+=req; sumAvail+=avail;
+    const covCell=(req,avail)=>{
+      const c=req>0?Math.round(avail/req*100):null;
+      return `<td class="c" style="font-family:var(--mono);font-weight:500;color:${c===null?'var(--text2)':c>=100?'var(--green)':c>=90?'var(--yellow)':'var(--red)'};">${c===null?'—':c+'%'}</td>`;
+    };
+    let sdR=0,sdA=0,siR=0,siA=0;
+    for(let sh=0; sh<nSh; sh++){
+      const running=lines.filter(l=>lineActive(l,sh));
+      const dReq=shiftReq(sh,'dir'), iReq=shiftReq(sh,'ind');
+      const dOps=effSplit?wfShiftOps(eff,sh):0, iOps=effSplitI?wfShiftOps(eff,sh,'ind'):0;
+      const dAv=availFor(dOps), iAv=availFor(iOps);
+      sdR+=dReq; sdA+=dAv; siR+=iReq; siA+=iAv;
       sb.insertRow().innerHTML=`
-        <td style="font-family:var(--mono);font-weight:500;">S${si+1}</td>
+        <td style="font-family:var(--mono);font-weight:500;">S${sh+1}</td>
         <td style="font-size:11px;color:var(--text2);">${running.length?running.map(l=>l.name).join(', '):'none'}</td>
-        <td class="c" style="font-family:var(--mono);">${hu(req)}</td>
-        <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(avail)} <span style="color:var(--text2);font-size:10px;">(${ops} op)</span></td>
-        <td class="c" style="font-family:var(--mono);font-weight:500;color:${covS===null?'var(--text2)':covS>=100?'var(--green)':covS>=90?'var(--yellow)':'var(--red)'};">${covS===null?'—':covS+'%'}</td>
-        <td class="c" style="font-family:var(--mono);">${needS}</td>
-        <td class="c"><span class="pill ${gapS>0?'pill-danger':'pill-ok'}">${gapS>0?'Short '+gapS+' op':'OK'}</span></td>`;
+        <td class="c" style="font-family:var(--mono);">${hu(dReq)}</td>
+        <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(dAv)} <span style="color:var(--text2);font-size:10px;">(${dOps})</span></td>
+        ${covCell(dReq,dAv)}
+        <td class="c" style="font-family:var(--mono);">${hu(iReq)}</td>
+        <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(iAv)} <span style="color:var(--text2);font-size:10px;">(${iOps})</span></td>
+        ${covCell(iReq,iAv)}`;
     }
     const sTot=sb.insertRow(); sTot.className='tot';
-    const sCov=sumReq>0?Math.round(sumAvail/sumReq*100):0;
-    sTot.innerHTML=`
-      <td colspan="2">ALL SHIFTS</td>
-      <td class="c">${hu(sumReq)}</td>
-      <td class="c" style="color:var(--green);">${hu(sumAvail)}</td>
-      <td class="c" style="color:${sCov>=100?'var(--green)':sCov>=90?'var(--yellow)':'var(--red)'};">${sCov}%</td>
-      <td class="c">${effOps}</td>
-      <td class="c"><span class="pill pill-ok">available</span></td>`;
+    sTot.innerHTML=`<td colspan="2">ALL SHIFTS</td>
+      <td class="c">${hu(sdR)}</td><td class="c" style="color:var(--green);">${hu(sdA)}</td>${covCell(sdR,sdA)}
+      <td class="c">${hu(siR)}</td><td class="c" style="color:var(--green);">${hu(siA)}</td>${covCell(siR,siA)}`;
+  }
+
+  // ── Coverage by category (direct vs indirect, always available) ──
+  const catWrap=document.getElementById('hc-cat-wrap');
+  catWrap.style.display=wfSet?'block':'none';
+  if(wfSet){
+    const ct2=document.getElementById('hc-cat-table'); ct2.innerHTML='';
+    const chr2=ct2.createTHead().insertRow();
+    ['Category','Required hrs','Available hrs','Coverage','Headcount','Needed','Status'].forEach((h,i)=>{
+      const th=document.createElement('th'); th.textContent=h;
+      th.className=i===0?'':'c'; th.style.whiteSpace='nowrap'; chr2.appendChild(th);
+    });
+    const cb2=ct2.createTBody();
+    const catRow=(label,wkArr,ops)=>{
+      const req=wkArr.reduce((s,v)=>s+v,0);
+      const avail=availFor(ops);
+      const c=req>0?Math.round(avail/req*100):null;
+      // headcount for the busiest week of the category
+      const need=Math.max(0,...weeks.map((w,wi)=>LineSightCalc.operatorsNeeded({
+        requiredHours:wkArr[wi],contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+      })));
+      const gap=need-ops;
+      cb2.insertRow().innerHTML=`
+        <td style="font-size:12px;">${label}</td>
+        <td class="c" style="font-family:var(--mono);">${hu(req)}</td>
+        <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(avail)}</td>
+        <td class="c" style="font-family:var(--mono);font-weight:500;color:${c===null?'var(--text2)':c>=100?'var(--green)':c>=90?'var(--yellow)':'var(--red)'};">${c===null?'—':c+'%'}</td>
+        <td class="c" style="font-family:var(--mono);">${ops}</td>
+        <td class="c" style="font-family:var(--mono);">${need}</td>
+        <td class="c"><span class="pill ${gap>0?'pill-danger':'pill-ok'}">${gap>0?'Short '+gap:'OK'}</span></td>`;
+    };
+    const wkDirect=weeks.map((w,wi)=>lines.reduce((s,l)=>s+lWkHCshift(l,w,m,wi),0));
+    const wkIndirect=weeks.map((w,wi)=>lines.reduce((s,l)=>s+lWkHCday(l,w,m,wi),0));
+    catRow('Direct operators',wkDirect,effOps);
+    catRow('Indirect staff',wkIndirect,effOpsI);
+    const cTot=cb2.insertRow(); cTot.className='tot';
+    cTot.innerHTML=`<td>TOTAL</td>
+      <td class="c">${hu(totFTE)}</td>
+      <td class="c" style="color:var(--green);">${hu(totAvail)}</td>
+      <td class="c" style="color:${cov>=100?'var(--green)':cov>=90?'var(--yellow)':'var(--red)'};">${cov}%</td>
+      <td class="c">${effOps+effOpsI}</td>
+      <td class="c">${peakNeed}</td>
+      <td class="c"><span class="pill ${hireGap>0?'pill-danger':'pill-ok'}">${hireGap>0?'Hire '+hireGap:'OK'}</span></td>`;
   }
 
   // ── Weekly labor hrs table by line ──
@@ -1314,7 +1386,7 @@ function renderHeadcount(){
   // ── Line detail table ──
   const lt=document.getElementById('hc-line-table'); lt.innerHTML='';
   const lh=lt.createTHead().insertRow();
-  ['Line','Group','HC/sh','HC/d','Mo. hrs'].forEach((h,i)=>{
+  ["Line","Group","Direct","Indirect","Mo. hrs"].forEach((h,i)=>{
     const th=document.createElement('th'); th.textContent=h;
     const widths=['56px','100px','54px','50px','86px'];
     th.style.width=widths[i];
@@ -1331,7 +1403,7 @@ function renderHeadcount(){
       <td style="font-size:12px;">${l.name}</td>
       <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
       <td class="c" style="font-family:var(--mono);font-weight:500;" title="per active shift">${shiftHCLabel(l)}</td>
-      <td class="c" style="font-family:var(--mono);font-weight:500;">${l.hcDay||0}</td>
+      <td class="c" style="font-family:var(--mono);font-weight:500;" title="per active shift">${shiftHCILabel(l)}</td>
       <td class="c" style="font-family:var(--mono);color:var(--green-l);font-weight:500;">${hu(moFTE)}</td>
     `;
   });
@@ -1350,7 +1422,7 @@ function renderHeadcount(){
     data:{
       labels:lines.map(l=>l.name),
       datasets:[
-        {label:'Shift operators',data:lines.map(l=>weeks.reduce((s,w,wi)=>s+lWkHCshift(l,w,m,wi),0)),
+        {label:"Direct labor hrs",data:lines.map(l=>weeks.reduce((s,w,wi)=>s+lWkHCshift(l,w,m,wi),0)),
           backgroundColor:lines.map(l=>pg(l.pg).color+'CC'),borderColor:lines.map(l=>pg(l.pg).color),borderWidth:1},
         {label:'Fixed daily',data:lines.map(l=>weeks.reduce((s,w,wi)=>s+lWkHCday(l,w,m,wi),0)),
           backgroundColor:'rgba(122,130,153,0.3)',borderColor:'rgba(122,130,153,0.6)',borderWidth:1},
@@ -1598,9 +1670,9 @@ function renderBacklog(){
     const uDay=uShift*p2.shifts;
     const nShift=Math.ceil(res.bl/uShift), nDay=Math.ceil(res.bl/uDay);
     const hcShiftSum=lines.reduce((s,l)=>s+totShiftHC(l),0)/Math.max(1,p2.shifts); // avg operators per shift
-    const hcDaySum=lines.reduce((s,l)=>s+(l.hcDay||0),0);
-    const laborShift=hcShiftSum*p2.shiftlen;                      // one extra shift-day (no extra daily staff)
-    const laborDay=(hcShiftSum*p2.shifts+hcDaySum)*p2.shiftlen;   // one full extra day incl. fixed daily staff
+    const hcDaySum=lines.reduce((s,l)=>s+totShiftHCI(l),0)/Math.max(1,p2.shifts); // avg indirect per shift
+    const laborShift=hcShiftSum*p2.shiftlen;                      // one extra shift-day (direct operators only)
+    const laborDay=(hcShiftSum+hcDaySum)*p2.shifts*p2.shiftlen;   // one full extra day incl. indirect staff
     const wksLeft=Math.max(1,Math.ceil((deadline-new Date(year,month,1))/(7*864e5)));
     rcOut.innerHTML=`
       <div style="font-size:12px;margin-bottom:10px;">Projected backlog on <strong>${dstr}</strong>:
@@ -1747,6 +1819,13 @@ function setShiftHC(i,si,v){
   l.hcS[si]=+v||0;
   render();
 }
+// Indirect headcount per shift; materialises from the legacy per-day value on first edit
+function setShiftHCI(i,si,v){
+  const l=lines[i];
+  if(!Array.isArray(l.hcIS)) l.hcIS=Array.from({length:3},(_,k)=>shiftHCI(l,k));
+  l.hcIS[si]=+v||0;
+  render();
+}
 // Toggle whether a line runs on a given shift (affects capacity and labor)
 function toggleShift(i,si){
   const l=lines[i];
@@ -1770,7 +1849,7 @@ function renderLines(){
       <td class="c"><input class="numi" type="number" value="${l.cap}" min="1" max="99999" oninput="lines[${i}].cap=+this.value||0;render()"></td>
       <td class="c"><input class="numi" type="number" value="${l.oee??''}" placeholder="${Math.round(getP().oee*100)}" min="30" max="100" title="Line OEE % (empty = base ${Math.round(getP().oee*100)}%)" oninput="lines[${i}].oee=this.value===''?null:+this.value;render()"></td>
       <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;"><button onclick="toggleShift(${i},${si})" title="Shift ${si+1} is ${act?'running — click to turn off':'off — click to run this shift'}" style="font-family:var(--mono);font-size:8px;line-height:1;width:26px;padding:2px 0;border-radius:3px;border:.5px solid ${act?'var(--green)':'var(--border)'};cursor:pointer;background:${act?'var(--green-bg)':'transparent'};color:${act?'var(--green-l)':'var(--text2)'};">S${si+1}</button><input class="numi" type="number" value="${shiftHC(l,si)}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Operators on shift ${si+1}" oninput="setShiftHC(${i},${si},this.value)"></div>`;}).join('')}</div></td>
-      <td class="c"><input class="numi" type="number" value="${l.hcDay||0}" min="0" max="999" title="Fixed daily staff (supervisor, technician…)" oninput="lines[${i}].hcDay=+this.value||0;render()"></td>
+      <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<input class="numi" type="number" value="${shiftHCI(l,si)}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Indirect staff on shift ${si+1} (supervisor, technician, QC)" oninput="setShiftHCI(${i},${si},this.value)">`;}).join('')}</div></td>
       <td><select class="si" onchange="lines[${i}].pg=this.value;render()">${opts}</select></td>
       <td><button class="del-btn" onclick="delLine(${i})">✕</button></td>
     `;
@@ -2240,7 +2319,7 @@ async function runAI(){
     const dailyH=W.contract/5, absF=1-W.absence/100;
     let req=0, avail=0;
     weeks.forEach((w,wi)=>{ req+=wkHC(w,m,wi); avail+=wfTotalOps(W)*dailyH*absF*effDays(w,m,wi); });
-    summary+=`\nWORKFORCE: ${wfTotalOps(W)} operators available, ${W.contract}h/week contract, ${W.absence}% absence. Required ${Math.round(req).toLocaleString()} labor hrs vs available ${Math.round(avail).toLocaleString()} labor hrs (coverage ${pct(avail,req)}%).\n`;
+    summary+=`\nWORKFORCE: ${wfTotalOps(W)} direct operators + ${wfTotalOps(W,"ind")} indirect staff available, ${W.contract}h/week contract, ${W.absence}% absence. Required ${Math.round(req).toLocaleString()} labor hrs vs available ${Math.round(avail).toLocaleString()} labor hrs (coverage ${pct(avail,req)}%).\n`;
   }
 
   // PG demand
@@ -2387,11 +2466,11 @@ function exportCSV(){
   }
   else if(activeTab==='headcount'){
     rows.push(['HEADCOUNT — LINE DETAIL']);
-    rows.push(['Line','Product group','HC/shift','HC/day','Monthly labor hrs','Shift hrs','Daily hrs']);
+    rows.push(["Line","Product group","Direct HC","Indirect HC","Monthly labor hrs","Direct hrs","Indirect hrs"]);
     lines.forEach(l=>{
       const moS=weeks.reduce((s,w,wi)=>s+lWkHCshift(l,w,m,wi),0);
       const moD=weeks.reduce((s,w,wi)=>s+lWkHCday(l,w,m,wi),0);
-      rows.push([l.name,pg(l.pg).label,shiftHCLabel(l),l.hcDay||0,moS+moD,moS,moD]);
+      rows.push([l.name,pg(l.pg).label,shiftHCLabel(l),shiftHCILabel(l),moS+moD,moS,moD]);
     });
     rows.push([]);
     rows.push(['WEEKLY LABOR HOURS']);
@@ -2405,7 +2484,7 @@ function exportCSV(){
     if(wfTotalOps(W)>0){
       const dailyH=W.contract/5, absF=1-W.absence/100;
       rows.push([]);
-      rows.push(['WEEKLY COVERAGE',`${wfTotalOps(W)} operators`,`${W.contract} h/week`,`absence ${W.absence}%`,wfOvr[m]?'month override':'default workforce']);
+      rows.push(["WEEKLY COVERAGE",`${wfTotalOps(W)} direct + ${wfTotalOps(W,"ind")} indirect`,`${W.contract} h/week`,`absence ${W.absence}%`,wfOvr[m]?'month override':'default workforce']);
       rows.push(['Week','Days','Required hrs','Available hrs','Coverage %','Ops needed','Gap']);
       let peakNeed=0;
       weeks.forEach((w,wi)=>{
@@ -2419,21 +2498,34 @@ function exportCSV(){
       rows.push(['HIRING SUGGESTION','','','','','',Math.max(0,peakNeed-wfTotalOps(W))]);
       if(wfHasSplit(W)){
         rows.push([]);
-        rows.push(['COVERAGE BY SHIFT','shift operators only']);
-        rows.push(['Shift','Lines running','Required hrs','Available hrs','Operators','Coverage %','Ops needed','Gap']);
+        rows.push(['COVERAGE BY SHIFT']);
+        rows.push(['Shift','Lines running','Direct req hrs','Direct avail hrs','Direct HC','Direct %','Indirect req hrs','Indirect avail hrs','Indirect HC','Indirect %']);
         for(let si=0; si<p.shifts; si++){
           const running=lines.filter(l=>lineActive(l,si));
-          let req=0, avail=0, need=0;
+          let dReq=0,dAv=0,iReq=0,iAv=0;
+          const dOps=wfShiftOps(W,si), iOps=wfShiftOps(W,si,'ind');
           weeks.forEach((w,wi)=>{
             const d=effDays(w,m,wi);
-            const rq=running.reduce((s,l)=>s+shiftHC(l,si)*p.shiftlen*d,0);
-            req+=rq; avail+=Math.round(wfShiftOps(W,si)*dailyH*absF*d);
-            need=Math.max(need,d>0?Math.ceil(rq/(dailyH*absF*d)):0);
+            dReq+=running.reduce((s,l)=>s+shiftHC(l,si)*p.shiftlen*d,0);
+            iReq+=running.reduce((s,l)=>s+shiftHCI(l,si)*p.shiftlen*d,0);
+            dAv+=Math.round(dOps*dailyH*absF*d);
+            iAv+=Math.round(iOps*dailyH*absF*d);
           });
-          rows.push([`S${si+1}`,running.map(l=>l.name).join(', ')||'none',Math.round(req),avail,wfShiftOps(W,si),
-                     req>0?Math.round(avail/req*100):'',need,Math.max(0,need-wfShiftOps(W,si))]);
+          rows.push([`S${si+1}`,running.map(l=>l.name).join(', ')||'none',
+                     Math.round(dReq),dAv,dOps,dReq>0?Math.round(dAv/dReq*100):'',
+                     Math.round(iReq),iAv,iOps,iReq>0?Math.round(iAv/iReq*100):'']);
         }
       }
+      // direct vs indirect totals for the month
+      rows.push([]);
+      rows.push(['COVERAGE BY CATEGORY']);
+      rows.push(['Category','Required hrs','Available hrs','Headcount','Coverage %']);
+      const dReqM=weeks.reduce((s,w,wi)=>s+lines.reduce((ls,l)=>ls+lWkHCshift(l,w,m,wi),0),0);
+      const iReqM=weeks.reduce((s,w,wi)=>s+lines.reduce((ls,l)=>ls+lWkHCday(l,w,m,wi),0),0);
+      const dAvM=weeks.reduce((s,w,wi)=>s+Math.round(wfTotalOps(W)*dailyH*absF*effDays(w,m,wi)),0);
+      const iAvM=weeks.reduce((s,w,wi)=>s+Math.round(wfTotalOps(W,'ind')*dailyH*absF*effDays(w,m,wi)),0);
+      rows.push(['Direct operators',dReqM,dAvM,wfTotalOps(W),dReqM>0?Math.round(dAvM/dReqM*100):'']);
+      rows.push(['Indirect staff',iReqM,iAvM,wfTotalOps(W,'ind'),iReqM>0?Math.round(iAvM/iReqM*100):'']);
     }
   }
   else if(activeTab==='backlog'){
@@ -3507,7 +3599,7 @@ function buildReport(){
     ?`Opening backlog <strong>${hu(opening)}</strong> units → closing <strong class="${M.closing>0?'bad':'good'}">${hu(M.closing)}</strong> units.`
     :'No backlog in the plan.';
   const covLine=M.coverage!==null
-    ?(W2=>` Workforce coverage <strong class="${M.coverage>=100?'good':M.coverage>=90?'warn':'bad'}">${M.coverage}%</strong> (${wfTotalOps(W2)} operators${wfHasSplit(W2)?' ['+Array.from({length:getP().shifts},(_,i)=>wfShiftOps(W2,i)).join('/')+']':''}, ${W2.contract} h/week, ${W2.absence}% absence).`)(wfFor(m))
+    ?(W2=>` Workforce coverage <strong class="${M.coverage>=100?'good':M.coverage>=90?'warn':'bad'}">${M.coverage}%</strong> (${wfTotalOps(W2)} direct${wfHasSplit(W2)?' ['+Array.from({length:getP().shifts},(_,i)=>wfShiftOps(W2,i)).join('/')+']':''} + ${wfTotalOps(W2,'ind')} indirect${wfHasSplit(W2,'ind')?' ['+Array.from({length:getP().shifts},(_,i)=>wfShiftOps(W2,i,'ind')).join('/')+']':''}, ${W2.contract} h/week, ${W2.absence}% absence).`)(wfFor(m))
     :'';
   const evs=Object.entries(calEvents)
     .map(([k,v])=>{const [y,mo,da]=k.split('-').map(Number); return {date:new Date(y,mo-1,da),label:v.label};})
