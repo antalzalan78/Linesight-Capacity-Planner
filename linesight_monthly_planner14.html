@@ -517,6 +517,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
           <div class="param-label-row"><span class="param-label">Absence rate % (sickness, vacation)</span></div>
           <input class="numi" type="number" id="wf-abs" min="0" max="60" oninput="workforce.absence=+this.value||0;render()">
         </div>
+        <div id="wf-factor" style="margin-top:10px;padding:8px 10px;background:var(--bg3);border-radius:6px;font-size:11px;line-height:1.6;color:var(--text2);"></div>
         <div class="divider"></div>
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
           <input type="checkbox" id="wf-ovr-on" onchange="toggleWfOvr(this.checked)">
@@ -1187,6 +1188,23 @@ function renderHeadcount(){
   });
   const peakNeed=Math.max(0,...opsNeeded);
   const hireGap=wfSet?Math.max(0,peakNeed-(effOps+effOpsI)):null;
+
+  // ── Shift factor: why the headcount need differs from the number of positions ──
+  // One person only covers a full shift position if their weekly presence equals
+  // shift length × working days; a shorter contract (and absence) needs more heads.
+  const posDir=lines.reduce((s,l)=>s+totShiftHC(l),0);
+  const posInd=lines.reduce((s,l)=>s+totShiftHCI(l),0);
+  const positions=posDir+posInd;
+  const perOpDay=dailyH*absF;                       // hours one person delivers per working day
+  const headsPerPos=perOpDay>0?p.shiftlen/perOpDay:0; // people needed to staff one shift position
+  document.getElementById('wf-factor').innerHTML=positions>0?`
+    One person delivers <strong style="color:var(--text);">${(Math.round(perOpDay*100)/100)}&nbsp;h/day</strong>
+    (${eff.contract}&nbsp;h ÷ 5 days, minus ${eff.absence}% absence), while one shift position needs ${fmtD(p.shiftlen)}&nbsp;h/day.<br>
+    So one position costs <strong style="color:${headsPerPos>1.02?'var(--yellow)':'var(--text)'};">${(Math.round(headsPerPos*1000)/1000)}</strong> people.
+    Your lines staff <strong style="color:var(--text);">${positions}</strong> positions
+    (${posDir} direct + ${posInd} indirect) → <strong style="color:${wfSet&&peakNeed>(effOps+effOpsI)?'var(--red)':'var(--green-l)'};">${peakNeed}</strong> people needed in the busiest week${wfSet?`, ${effOps+effOpsI} available`:''}.
+    ${eff.contract<p.shiftlen*5?`<br><span style="color:var(--yellow);">The contract is shorter than ${fmtD(p.shiftlen)}&nbsp;h × 5 days. If your people are actually present for the whole shift, enter ${fmtD(p.shiftlen*5)} contract hours instead.</span>`:''}`
+    :'Add operators to the production lines to see the headcount requirement.';
 
   // ── Monthly summary strip ──
   let totFTE=0, totShift=0, totDay=0;
