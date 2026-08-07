@@ -490,7 +490,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <div>
       <div class="card">
         <div class="section-label">Workforce availability</div>
-        <p class="info-text">Compare the planned labor-hour requirement with the operators actually available. Available hours = operators × (contract hrs ÷ 5) × working days, reduced by the absence rate. Leave operators at 0 to disable the check. The values below are the <strong>defaults</strong> — tick the box at the bottom to set different values for the selected month. Tick <strong>Split by shift</strong> to enter the operators available on each shift separately; the coverage is then also checked shift by shift.</p>
+        <p class="info-text">Compare the planned labor-hour requirement with the operators actually available. Available hours = operators × (contract hrs ÷ working days per week) × working days, reduced by the absence rate, so the contract is spread over the days the site actually runs. Leave operators at 0 to disable the check. The values below are the <strong>defaults</strong> — tick the box at the bottom to set different values for the selected month. Tick <strong>Split by shift</strong> to enter the operators available on each shift separately; the coverage is then also checked shift by shift.</p>
         <div class="param-row">
           <div class="param-label-row"><span class="param-label">Available operators (headcount)</span><span id="wf-ops-note" style="font-size:10px;color:var(--text2);"></span></div>
           <input class="numi" type="number" id="wf-ops" min="0" max="9999" placeholder="0 = off" oninput="workforce.ops=+this.value||0;render()">
@@ -1174,17 +1174,17 @@ function renderHeadcount(){
   const effOps=wfTotalOps(eff), effSplit=wfHasSplit(eff);
   const effOpsI=wfTotalOps(eff,'ind'), effSplitI=wfHasSplit(eff,'ind');
   const wfSet=(effOps+effOpsI)>0;
-  const dailyH=eff.contract/5, absF=1-eff.absence/100;
+  const dailyH=LineSightCalc.contractDailyHours(eff.contract,p.days), absF=1-eff.absence/100;
   const wkReq  =weeks.map((w,wi)=>wkHC(w,m,wi));
   const wkAvail=weeks.map((w,wi)=>LineSightCalc.availableLaborHours({
-    operators:effOps+effOpsI,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+    operators:effOps+effOpsI,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi),standardDays:p.days
   }));
   // operators needed per week for full coverage (absence already grossed in via absF)
   const opsNeeded=weeks.map((w,wi)=>{
     const d=effDays(w,m,wi);
     return LineSightCalc.operatorsNeeded({
       requiredHours:wkReq[wi],contractHours:eff.contract,absenceRate:eff.absence,workingDays:d
-    });
+    ,standardDays:p.days});
   });
   const peakNeed=Math.max(0,...opsNeeded);
   const hireGap=wfSet?Math.max(0,peakNeed-(effOps+effOpsI)):null;
@@ -1199,11 +1199,11 @@ function renderHeadcount(){
   const headsPerPos=perOpDay>0?p.shiftlen/perOpDay:0; // people needed to staff one shift position
   document.getElementById('wf-factor').innerHTML=positions>0?`
     One person delivers <strong style="color:var(--text);">${(Math.round(perOpDay*100)/100)}&nbsp;h/day</strong>
-    (${eff.contract}&nbsp;h ÷ 5 days, minus ${eff.absence}% absence), while one shift position needs ${fmtD(p.shiftlen)}&nbsp;h/day.<br>
+    (${eff.contract}&nbsp;h ÷ ${fmtD(p.days)} working days, minus ${eff.absence}% absence), while one shift position needs ${fmtD(p.shiftlen)}&nbsp;h/day.<br>
     So one position costs <strong style="color:${headsPerPos>1.02?'var(--yellow)':'var(--text)'};">${(Math.round(headsPerPos*1000)/1000)}</strong> people.
     Your lines staff <strong style="color:var(--text);">${positions}</strong> positions
     (${posDir} direct + ${posInd} indirect) → <strong style="color:${wfSet&&peakNeed>(effOps+effOpsI)?'var(--red)':'var(--green-l)'};">${peakNeed}</strong> people needed in the busiest week${wfSet?`, ${effOps+effOpsI} available`:''}.
-    ${eff.contract<p.shiftlen*5?`<br><span style="color:var(--yellow);">The contract is shorter than ${fmtD(p.shiftlen)}&nbsp;h × 5 days. If your people are actually present for the whole shift, enter ${fmtD(p.shiftlen*5)} contract hours instead.</span>`:''}`
+    ${eff.contract<p.shiftlen*p.days?`<br><span style="color:var(--yellow);">The contract is shorter than ${fmtD(p.shiftlen)}&nbsp;h × ${fmtD(p.days)} days. If your people are actually present for the whole shift, enter ${fmtD(p.shiftlen*p.days)} contract hours instead.</span>`:''}`
     :'Add operators to the production lines to see the headcount requirement.';
 
   // ── Monthly summary strip ──
@@ -1271,7 +1271,7 @@ function renderHeadcount(){
     return s+lines.filter(l=>lineActive(l,si)).reduce((ls,l)=>ls+(kind==='ind'?shiftHCI(l,si):shiftHC(l,si))*p.shiftlen*d,0);
   },0);
   const availFor=ops=>weeks.reduce((s,w,wi)=>s+LineSightCalc.availableLaborHours({
-    operators:ops,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+    operators:ops,contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi),standardDays:p.days
   }),0);
   const anySplit=effSplit||effSplitI;
   const shiftWrap=document.getElementById('hc-shift-wrap');
@@ -1328,7 +1328,7 @@ function renderHeadcount(){
       const c=req>0?Math.round(avail/req*100):null;
       // headcount for the busiest week of the category
       const need=Math.max(0,...weeks.map((w,wi)=>LineSightCalc.operatorsNeeded({
-        requiredHours:wkArr[wi],contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi)
+        requiredHours:wkArr[wi],contractHours:eff.contract,absenceRate:eff.absence,workingDays:effDays(w,m,wi),standardDays:p.days
       })));
       const gap=need-ops;
       cb2.insertRow().innerHTML=`
@@ -2110,9 +2110,9 @@ function monthKPI(d){
   const closing=series.length?series[series.length-1].bl:0;
   const W=wfFor(m);
   let coverage=null;
-  if(wfTotalOps(W)>0&&labor>0){
-    const dailyH=W.contract/5, absF=1-W.absence/100;
-    const avail=weeks.reduce((s,w,wi)=>s+wfTotalOps(W)*dailyH*absF*effDays(w,m,wi),0);
+  if((wfTotalOps(W)+wfTotalOps(W,"ind"))>0&&labor>0){
+    const dailyH=LineSightCalc.contractDailyHours(W.contract,getP().days), absF=1-W.absence/100;
+    const avail=weeks.reduce((s,w,wi)=>s+(wfTotalOps(W)+wfTotalOps(W,"ind"))*dailyH*absF*effDays(w,m,wi),0);
     coverage=Math.round(avail/labor*100);
   }
   const rows=mps.filter(r=>mkOfDate(r.date)===m);
@@ -2334,9 +2334,9 @@ async function runAI(){
   // Workforce coverage
   const W=wfFor(m);
   if(wfTotalOps(W)>0){
-    const dailyH=W.contract/5, absF=1-W.absence/100;
+    const dailyH=LineSightCalc.contractDailyHours(W.contract,getP().days), absF=1-W.absence/100;
     let req=0, avail=0;
-    weeks.forEach((w,wi)=>{ req+=wkHC(w,m,wi); avail+=wfTotalOps(W)*dailyH*absF*effDays(w,m,wi); });
+    weeks.forEach((w,wi)=>{ req+=wkHC(w,m,wi); avail+=(wfTotalOps(W)+wfTotalOps(W,"ind"))*dailyH*absF*effDays(w,m,wi); });
     summary+=`\nWORKFORCE: ${wfTotalOps(W)} direct operators + ${wfTotalOps(W,"ind")} indirect staff available, ${W.contract}h/week contract, ${W.absence}% absence. Required ${Math.round(req).toLocaleString()} labor hrs vs available ${Math.round(avail).toLocaleString()} labor hrs (coverage ${pct(avail,req)}%).\n`;
   }
 
@@ -2500,7 +2500,7 @@ function exportCSV(){
     });
     const W=wfFor(m);
     if(wfTotalOps(W)>0){
-      const dailyH=W.contract/5, absF=1-W.absence/100;
+      const dailyH=LineSightCalc.contractDailyHours(W.contract,getP().days), absF=1-W.absence/100;
       rows.push([]);
       rows.push(["WEEKLY COVERAGE",`${wfTotalOps(W)} direct + ${wfTotalOps(W,"ind")} indirect`,`${W.contract} h/week`,`absence ${W.absence}%`,wfOvr[m]?'month override':'default workforce']);
       rows.push(['Week','Days','Required hrs','Available hrs','Coverage %','Ops needed','Gap']);
@@ -2508,7 +2508,7 @@ function exportCSV(){
       weeks.forEach((w,wi)=>{
         const days=effDays(w,m,wi);
         const req=wkHC(w,m,wi);
-        const avail=Math.round(wfTotalOps(W)*dailyH*absF*days);
+        const avail=Math.round((wfTotalOps(W)+wfTotalOps(W,"ind"))*dailyH*absF*days);
         const need=days>0?Math.ceil(req/(dailyH*absF*days)):0;
         peakNeed=Math.max(peakNeed,need);
         rows.push([w.label,days,req,avail,req>0?Math.round(avail/req*100):'',need,Math.max(0,need-wfTotalOps(W))]);
@@ -2642,9 +2642,9 @@ function computeMetrics(){
   const closing=series.length?series[series.length-1].bl:0;
   let coverage=null;
   const W=wfFor(m);
-  if(wfTotalOps(W)>0&&labor>0){
-    const dailyH=W.contract/5, absF=1-W.absence/100;
-    const avail=weeks.reduce((s,w,wi)=>s+wfTotalOps(W)*dailyH*absF*effDays(w,m,wi),0);
+  if((wfTotalOps(W)+wfTotalOps(W,"ind"))>0&&labor>0){
+    const dailyH=LineSightCalc.contractDailyHours(W.contract,getP().days), absF=1-W.absence/100;
+    const avail=weeks.reduce((s,w,wi)=>s+(wfTotalOps(W)+wfTotalOps(W,"ind"))*dailyH*absF*effDays(w,m,wi),0);
     coverage=Math.round(avail/labor*100);
   }
   return {cap,dem,util:pct(dem,cap),free:cap-dem,labor,coverage,closing,

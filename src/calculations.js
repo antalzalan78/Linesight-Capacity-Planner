@@ -23,14 +23,22 @@
     return Math.round(Math.max(0,finite(rate))*efficiency*hours*shifts);
   }
 
-  function availableLaborHours({operators=0,contractHours=0,absenceRate=0,workingDays=0}={}){
-    const dailyHours=Math.max(0,finite(contractHours))/5;
+  // Contract hours are a weekly figure, so the daily rate depends on how many days
+  // a week the site actually runs: a 36 h contract is 7.2 h/day over 5 days but
+  // 8 h/day over 4.5 days. standardDays is the site's normal working week.
+  function contractDailyHours(contractHours,standardDays){
+    const days=Math.max(0,finite(standardDays));
+    return Math.max(0,finite(contractHours))/(days>0?days:5);
+  }
+
+  function availableLaborHours({operators=0,contractHours=0,absenceRate=0,workingDays=0,standardDays=5}={}){
+    const dailyHours=contractDailyHours(contractHours,standardDays);
     const attendance=Math.max(0,1-Math.max(0,finite(absenceRate))/100);
     return Math.round(Math.max(0,finite(operators))*dailyHours*attendance*Math.max(0,finite(workingDays)));
   }
 
-  function operatorsNeeded({requiredHours=0,contractHours=0,absenceRate=0,workingDays=0}={}){
-    const dailyHours=Math.max(0,finite(contractHours))/5;
+  function operatorsNeeded({requiredHours=0,contractHours=0,absenceRate=0,workingDays=0,standardDays=5}={}){
+    const dailyHours=contractDailyHours(contractHours,standardDays);
     const attendance=Math.max(0,1-Math.max(0,finite(absenceRate))/100);
     const availablePerOperator=dailyHours*attendance*Math.max(0,finite(workingDays));
     return availablePerOperator>0?Math.ceil(Math.max(0,finite(requiredHours))/availablePerOperator):0;
@@ -89,6 +97,7 @@
 
   return {
     percent,
+    contractDailyHours,
     dailyCapacity,
     availableLaborHours,
     operatorsNeeded,

@@ -31,6 +31,25 @@ test('workforce availability and required operators include absence',()=>{
   }),22);
 });
 
+test('contract hours spread over the working week the site actually runs',()=>{
+  // 36 h over 5 days is 7.2 h/day, but over 4.5 days it is a full 8 h/day
+  assert.equal(calc.contractDailyHours(36,5),7.2);
+  assert.equal(calc.contractDailyHours(36,4.5),8);
+  assert.equal(calc.contractDailyHours(36,7),36/7);
+  assert.equal(calc.contractDailyHours(36,0),7.2); // guard: fall back to a 5-day week
+  // one person covers one 8 h position exactly on a 4.5-day week, absence aside
+  assert.equal(calc.availableLaborHours({
+    operators:1,contractHours:36,absenceRate:0,workingDays:4.5,standardDays:4.5,
+  }),36);
+  assert.equal(calc.operatorsNeeded({
+    requiredHours:36,contractHours:36,absenceRate:0,workingDays:4.5,standardDays:4.5,
+  }),1);
+  // a 7-day operation needs far more people for the same position
+  assert.equal(calc.operatorsNeeded({
+    requiredHours:8*7,contractHours:36,absenceRate:0,workingDays:7,standardDays:7,
+  }),2);
+});
+
 test('month-end carry can be absorbed by later free working-day capacity',()=>{
   assert.equal(calc.monthEndCarry({
     daysInMonth:5,
