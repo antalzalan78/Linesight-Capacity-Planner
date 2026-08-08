@@ -1164,7 +1164,7 @@ function renderHeadcount(){
       wrap.innerHTML=Array.from({length:nSh},(_,si)=>`
         <div style="flex:1;text-align:center;">
           <div style="font-family:var(--mono);font-size:9px;color:var(--text2);margin-bottom:2px;">S${si+1}</div>
-          <input data-k="wfs-${scope}-${si}" class="numi" type="number" min="0" max="9999" style="width:100%;" value="${wfShiftOps(W,si,k)}" oninput="setWfShiftOps('${scope}',${si},this.value)">
+          <input data-k="wfs-${scope}-${si}" class="numi" type="text" inputmode="numeric" min="0" max="9999" style="width:100%;" value="${wfShiftOps(W,si,k)}" oninput="setWfShiftOps('${scope}',${si},this.value)">
         </div>`).join('');
     }
   };
@@ -1571,7 +1571,7 @@ function renderBacklog(){
       const row=document.createElement('div'); row.className='pg-demand-row';
       row.innerHTML=`
         <div class="pg-name"><span class="pg-dot" style="background:${g.color};"></span>${g.label}${sp>0?`<br><span style="font-size:9px;color:var(--yellow);" title="Automatically carried from last month's MPS spill-over">+${hu(sp)} MPS spill</span>`:''}</div>
-        <input data-k="blo-${g.key}" class="numi" type="number" value="${val}" min="0" max="99999999" title="Manual opening backlog${sp>0?` (plus ${hu(sp)} auto from MPS = ${hu(val+sp)})`:''}"
+        <input data-k="blo-${g.key}" class="numi" type="text" inputmode="numeric" value="${val}" min="0" max="99999999" title="Manual opening backlog${sp>0?` (plus ${hu(sp)} auto from MPS = ${hu(val+sp)})`:''}"
           oninput="setBLO('${m}','${g.key}',+this.value||0);render()">
         <div class="pg-stat" style="color:${!hasLines&&(val+sp)>0?'var(--yellow)':cls>0?'var(--red)':'var(--text2)'};">
           ${!hasLines&&(val+sp)>0?'no line':'→ '+hu(cls)}
@@ -1864,10 +1864,10 @@ function renderLines(){
     const tr=document.createElement('tr');
     tr.innerHTML=`
       <td><select class="si" onchange="lines[${i}].name=this.value;render()">${nameOpts(l.name)}</select></td>
-      <td class="c"><input class="numi" type="number" value="${l.cap}" data-k="line-${i}-cap" min="1" max="99999" oninput="lines[${i}].cap=+this.value||0;render()"></td>
-      <td class="c"><input class="numi" type="number" value="${l.oee??''}" data-k="line-${i}-oee" placeholder="${Math.round(getP().oee*100)}" min="30" max="100" title="Line OEE % (empty = base ${Math.round(getP().oee*100)}%)" oninput="lines[${i}].oee=this.value===''?null:+this.value;render()"></td>
-      <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;"><button onclick="toggleShift(${i},${si})" title="Shift ${si+1} is ${act?'running — click to turn off':'off — click to run this shift'}" style="font-family:var(--mono);font-size:8px;line-height:1;width:26px;padding:2px 0;border-radius:3px;border:.5px solid ${act?'var(--green)':'var(--border)'};cursor:pointer;background:${act?'var(--green-bg)':'transparent'};color:${act?'var(--green-l)':'var(--text2)'};">S${si+1}</button><input class="numi" type="number" value="${shiftHC(l,si)}" data-k="line-${i}-d${si}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Operators on shift ${si+1}" oninput="setShiftHC(${i},${si},this.value)"></div>`;}).join('')}</div></td>
-      <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<input class="numi" type="number" value="${shiftHCI(l,si)}" data-k="line-${i}-i${si}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Indirect staff on shift ${si+1} (supervisor, technician, QC)" oninput="setShiftHCI(${i},${si},this.value)">`;}).join('')}</div></td>
+      <td class="c"><input class="numi" type="text" inputmode="numeric" value="${l.cap}" data-k="line-${i}-cap" min="1" max="99999" oninput="lines[${i}].cap=+this.value||0;render()"></td>
+      <td class="c"><input class="numi" type="text" inputmode="numeric" value="${l.oee??''}" data-k="line-${i}-oee" placeholder="${Math.round(getP().oee*100)}" min="30" max="100" title="Line OEE % (empty = base ${Math.round(getP().oee*100)}%)" oninput="lines[${i}].oee=this.value===''?null:+this.value;render()"></td>
+      <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;"><button onclick="toggleShift(${i},${si})" title="Shift ${si+1} is ${act?'running — click to turn off':'off — click to run this shift'}" style="font-family:var(--mono);font-size:8px;line-height:1;width:26px;padding:2px 0;border-radius:3px;border:.5px solid ${act?'var(--green)':'var(--border)'};cursor:pointer;background:${act?'var(--green-bg)':'transparent'};color:${act?'var(--green-l)':'var(--text2)'};">S${si+1}</button><input class="numi" type="text" inputmode="numeric" value="${shiftHC(l,si)}" data-k="line-${i}-d${si}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Operators on shift ${si+1}" oninput="setShiftHC(${i},${si},this.value)"></div>`;}).join('')}</div></td>
+      <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<input class="numi" type="text" inputmode="numeric" value="${shiftHCI(l,si)}" data-k="line-${i}-i${si}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Indirect staff on shift ${si+1} (supervisor, technician, QC)" oninput="setShiftHCI(${i},${si},this.value)">`;}).join('')}</div></td>
       <td><select class="si" onchange="lines[${i}].pg=this.value;render()">${opts}</select></td>
       <td><button class="del-btn" onclick="delLine(${i})">✕</button></td>
     `;
@@ -1911,8 +1911,8 @@ function renderWeeklyGrid(){
       <td class="c" style="font-family:var(--mono);color:var(--blue-l);">${hu(dem)}</td>
       <td class="c" style="font-family:var(--mono);font-weight:500;color:${tCol(ut)};">${ut}%</td>
       <td class="c" style="font-family:var(--mono);color:${sl<0?'var(--red)':'var(--text2)'};">${sl>=0?'+':''}${hu(sl)}</td>
-      <td class="c"><input class="wni" type="number" value="${cO}" data-k="wk-${wi}-oee" min="30" max="100" oninput="setOvr('${m}',${wi},'oee',+this.value);render()" style="width:36px;"><span style="font-size:9px;color:var(--text2);">%</span></td>
-      <td class="c"><input class="wni" type="number" value="${cF}" data-k="wk-${wi}-df" min="0" max="300" oninput="setOvr('${m}',${wi},'demFactor',+this.value);render()" style="width:36px;"><span style="font-size:9px;color:var(--text2);">%</span></td>
+      <td class="c"><input class="wni" type="text" inputmode="numeric" value="${cO}" data-k="wk-${wi}-oee" min="30" max="100" oninput="setOvr('${m}',${wi},'oee',+this.value);render()" style="width:36px;"><span style="font-size:9px;color:var(--text2);">%</span></td>
+      <td class="c"><input class="wni" type="text" inputmode="numeric" value="${cF}" data-k="wk-${wi}-df" min="0" max="300" oninput="setOvr('${m}',${wi},'demFactor',+this.value);render()" style="width:36px;"><span style="font-size:9px;color:var(--text2);">%</span></td>
     `;
   });
   const totUt=pct(sD,sC), totSl=sC-sD;
@@ -1986,7 +1986,7 @@ function renderDemandView(){
     const row=document.createElement('div'); row.className='pg-demand-row';
     row.innerHTML=`
       <div class="pg-name"><span class="pg-dot" style="background:${g.color};"></span>${g.label}</div>
-      <input data-k="pgd-${g.key}" class="numi" type="number" value="${val}" min="0" max="99999999"${fromMps?' disabled title="From the batch plan (MPS demand source) — edit batches on the MPS tab"':''}
+      <input data-k="pgd-${g.key}" class="numi" type="text" inputmode="numeric" value="${val}" min="0" max="99999999"${fromMps?' disabled title="From the batch plan (MPS demand source) — edit batches on the MPS tab"':''}
         oninput="setPGD('${m}','${g.key}',+this.value);render()">
       <div class="pg-stat" style="color:${pgCap>0?tCol(ut):'var(--text2)'};">
         ${pgCap>0?ut+'% cap.':lines.filter(l=>l.pg===g.key).length===0?'no line':'0 cap.'}
@@ -3446,12 +3446,12 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
     bb.insertRow().innerHTML=`
       <td style="width:126px;"><input type="date" class="wni" style="width:118px;font-size:10px;text-align:left;padding:3px 5px;color-scheme:dark;" value="${r.date}" onchange="setBatchDate(${gi},this.value)"></td>
       <td style="width:76px;"><select class="si" style="width:68px;" onchange="setBatchLine(${gi},this.value)">${lines.map(l2=>`<option value="${l2.name}"${l2.name===r.line?' selected':''}>${l2.name}</option>`).join('')}</select></td>
-      <td class="c" style="width:44px;"><input data-k="b-${gi}-seq" class="wni" type="number" style="width:38px;${coBatches.has(r)?'border-color:var(--yellow);':''}" value="${r.seq??''}" min="0" placeholder="—" title="Sequence within the day${coBatches.has(r)?' · ⇄ changeover (SKU change)':''}" oninput="setSeq(${gi},this.value)"></td>
+      <td class="c" style="width:44px;"><input data-k="b-${gi}-seq" class="wni" type="text" inputmode="numeric" style="width:38px;${coBatches.has(r)?'border-color:var(--yellow);':''}" value="${r.seq??''}" min="0" placeholder="—" title="Sequence within the day${coBatches.has(r)?' · ⇄ changeover (SKU change)':''}" oninput="setSeq(${gi},this.value)"></td>
       <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.job||'—'}</td>
       <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
       <td>${grp?`<span class="pg-dot" style="background:${grp.color};"></span><span style="font-size:10px;">${grp.label}</span>`:'<span style="font-size:10px;color:var(--yellow);">—</span>'}</td>
-      <td class="c" style="width:64px;"><input data-k="b-${gi}-qty" class="wni" type="number" style="width:56px;" value="${r.qty}" min="1" oninput="mps[${gi}].qty=+this.value||0;render()"></td>
-      <td class="c" style="width:64px;"><input data-k="b-${gi}-prod" class="wni" type="number" style="width:56px;" value="${r.produced??''}" min="0" placeholder="—" title="Actual produced quantity" oninput="setProduced(${gi},this.value)"></td>
+      <td class="c" style="width:64px;"><input data-k="b-${gi}-qty" class="wni" type="text" inputmode="numeric" style="width:56px;" value="${r.qty}" min="1" oninput="mps[${gi}].qty=+this.value||0;render()"></td>
+      <td class="c" style="width:64px;"><input data-k="b-${gi}-prod" class="wni" type="text" inputmode="numeric" style="width:56px;" value="${r.produced??''}" min="0" placeholder="—" title="Actual produced quantity" oninput="setProduced(${gi},this.value)"></td>
       <td class="c" style="font-family:var(--mono);font-size:10px;color:${remaining>0?'var(--yellow)':'var(--green)'};">${hu(remaining)}</td>
       <td class="c" style="font-family:var(--mono);font-size:10px;color:${adhP==null?'var(--text2)':adhP>=100?'var(--green)':adhP>=80?'var(--yellow)':'var(--red)'};">${adhP==null?'—':adhP+'%'}</td>
       <td class="c" style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.actualDate||'—'}</td>
@@ -4155,7 +4155,7 @@ function focusSnapshot(){
   const key=el&&el.dataset?el.dataset.k:null;
   if(!key) return null;
   let start=null,end=null;
-  try{ start=el.selectionStart; end=el.selectionEnd; }catch(e){} // number inputs disallow selection
+  try{ start=el.selectionStart; end=el.selectionEnd; }catch(e){} // some input types disallow selection
   // text fields keep their raw text so half-typed decimals like "8." survive a repaint
   return {key,start,end,raw:el.type==='text'?el.value:null};
 }
@@ -4167,6 +4167,27 @@ function focusRestore(snap){
   el.focus();
   if(snap.start!=null){ try{ el.setSelectionRange(snap.start,snap.end); }catch(e){} }
 }
+// The numeric fields are text inputs so the caret survives a repaint, which means
+// they would also swallow letters. Refuse the keystroke before it lands instead of
+// cleaning up afterwards, so the caret never moves. Name fields carry no inputmode
+// and are left alone.
+document.addEventListener('beforeinput',e=>{
+  const el=e.target;
+  if(!el||el.tagName!=='INPUT'||el.type!=='text') return;
+  const mode=el.getAttribute('inputmode');
+  if(mode!=='numeric'&&mode!=='decimal') return;
+  if(e.data==null) return; // deletions, undo and cut carry no text
+  const clean=e.data.replace(mode==='decimal'?/[^0-9.,]/g:/[^0-9]/g,'');
+  if(clean===e.data) return;
+  e.preventDefault();
+  if(!clean) return; // a stray letter simply does nothing
+  // a paste like "1 234 pcs" still lands, stripped down to the digits
+  const s=el.selectionStart==null?el.value.length:el.selectionStart;
+  const t=el.selectionEnd==null?s:el.selectionEnd;
+  el.value=el.value.slice(0,s)+clean+el.value.slice(t);
+  el.setSelectionRange(s+clean.length,s+clean.length);
+  el.dispatchEvent(new Event('input',{bubbles:true}));
+},true);
 function render(){
   const focus=focusSnapshot();
   _spillMemo.key=null; // recompute cross-month MPS spill for this pass
