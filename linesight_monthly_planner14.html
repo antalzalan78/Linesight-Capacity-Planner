@@ -205,7 +205,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         </div>
       </div>
       <div class="card">
-        <div class="section-label">Production Lines</div>
+        <div class="section-label">Production Lines — <span id="lines-month-label"></span></div>
         <table class="gt" id="lines-table">
           <thead><tr>
             <th style="width:70px;">Line</th>
@@ -219,6 +219,15 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
           <tbody id="lines-body"></tbody>
         </table>
         <button class="add-btn" onclick="addLine()">+ Add line</button>
+        <div class="divider"></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="lines-ovr-on" onchange="toggleLineOvr(this.checked)">
+          <span>Month-specific line set — <span id="lines-ovr-month" style="font-family:var(--mono);"></span></span>
+        </label>
+        <p class="info-text" id="lines-ovr-note" style="margin-top:6px;"></p>
+        <div id="lines-copy-wrap" style="display:none;margin-top:6px;">
+          <select class="si" id="lines-copy-from" style="width:100%;" onchange="copyLinesFrom(this.value);this.value='';"></select>
+        </div>
       </div>
       <div class="card">
         <div class="section-label">Holidays &amp; maintenance — <span id="cal-month-label"></span></div>
@@ -270,6 +279,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
       </div>
     </div>
         <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time, and <em>Run time/batch</em> uses each batch's actual run minutes (imported from HC_Total_Min / HC_Total_Hrs), the most reliable option when your sheet already carries it. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong> Completed batches (from the Status/Produced columns) show struck-through with a ✓; the Adherence tile tracks produced vs. planned.</p>
+        <div id="mps-offline-note" style="display:none;margin-bottom:8px;padding:7px 10px;border:.5px solid var(--yellow);border-radius:6px;background:rgba(239,159,39,0.08);font-size:11px;color:var(--yellow);"></div>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
     <div class="section-label" style="margin:14px 0 6px;">Weekly load by line <span style="text-transform:none;letter-spacing:0;color:var(--text2);">— booked load vs. available capacity per week</span></div>
     <div style="overflow-x:auto;"><table class="gt" id="mps-week-table"></table></div>
@@ -823,11 +833,17 @@ const MN = ['January','February','March','April','May','June','July','August','S
 // ════════════════════════════════
 // STATE
 // ════════════════════════════════
-let lines = [
+// The line set is month-bound: months share lineBase until one gets its own
+// allocation, which is then kept in lineOvr under that month's key. `lines`
+// always points at the set in force for the month on screen, so every existing
+// calculation keeps working on the right allocation.
+let lineBase = [
   {name:'Line1', cap:450, demand:360, pg:'soda',   hc:4, hcDay:1},
   {name:'Line2', cap:300, demand:310, pg:'bottle',  hc:3, hcDay:1},
   {name:'Line3', cap:200, demand:140, pg:'rental',  hc:2, hcDay:0},
 ];
+let lineOvr    = {};   // [monthKey] = line set used by that month alone
+let lines      = lineBase;
 let pgDemand   = {};   // [monthKey][pgKey] = number
 let weekOvr    = {};   // [monthKey][wi] = {days,oee,demFactor}
 let blOpen     = {};   // [monthKey][pgKey] = opening backlog (units)
@@ -872,6 +888,29 @@ const pTxt  = p => p>95?'Overloaded':p>80?'High':'OK';
 const mCls  = p => p>95?'danger':p>80?'warn':'ok';
 const fmtD  = v => v%1===0?String(v):v.toFixed(1);
 const pg    = key => PGS.find(g=>g.key===key)||PGS[0];
+
+// ── Month-bound line allocation ──
+// The line set a given month runs on: its own if it has one, otherwise the shared base.
+function linesFor(m){ return lineOvr[m]||lineBase; }
+// Point `lines` at the set of the month on screen (called at the start of every render)
+function syncLines(){ lines=linesFor(mk(curDate)); }
+function cloneLines(arr){ return JSON.parse(JSON.stringify(arr)); }
+// Give this month its own line set (seeded from what it shows now), or hand it back to the base
+function toggleLineOvr(on){
+  const m=mk(curDate);
+  if(on) lineOvr[m]=cloneLines(linesFor(m));
+  else delete lineOvr[m];
+  syncLines();
+  render();
+}
+// Copy another month's allocation into this month's own set
+function copyLinesFrom(m2){
+  const m=mk(curDate);
+  if(!m2||m2===m) return;
+  lineOvr[m]=cloneLines(linesFor(m2));
+  syncLines();
+  render();
+}
 
 function getOvr(m,wi,f,def){ return (weekOvr[m]?.[wi]?.[f]!==undefined)?weekOvr[m][wi][f]:def; }
 function setOvr(m,wi,f,v){ if(!weekOvr[m])weekOvr[m]={}; if(!weekOvr[m][wi])weekOvr[m][wi]={}; weekOvr[m][wi][f]=v; }
@@ -974,7 +1013,7 @@ function lWkCap(line,week,m,wi){
   return Math.round(line.cap*oee*p.shiftlen*nActiveShifts(line)*days);
 }
 // Total cap all lines for one week
-function wkCap(week,m,wi){ return lines.reduce((s,l)=>s+lWkCap(l,week,m,wi),0); }
+function wkCap(week,m,wi){ return linesFor(m).reduce((s,l)=>s+lWkCap(l,week,m,wi),0); }
 
 // Monthly cap of one line
 function lMoCap(line,weeks,m){ return weeks.reduce((s,w,wi)=>s+lWkCap(line,w,m,wi),0); }
@@ -993,7 +1032,7 @@ function lWkDem(line,week,m,wi,weeks){
   const monthDem=pgDem(m,pgKey);
   if(monthDem===0) return 0;
   // all lines in same PG
-  const pgLines=lines.filter(l=>l.pg===pgKey);
+  const pgLines=linesFor(m).filter(l=>l.pg===pgKey);
   const pgMoCap=pgLines.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
   if(pgMoCap===0) return 0;
   const lMC=lMoCap(line,weeks,m);
@@ -1004,7 +1043,7 @@ function lWkDem(line,week,m,wi,weeks){
 }
 
 // Total demand all lines for one week
-function wkDem(week,m,wi,weeks){ return lines.reduce((s,l)=>s+lWkDem(l,week,m,wi,weeks),0); }
+function wkDem(week,m,wi,weeks){ return linesFor(m).reduce((s,l)=>s+lWkDem(l,week,m,wi,weeks),0); }
 
 // ════════════════════════════════
 // HEADCOUNT CALC  (labor hours)
@@ -1056,7 +1095,7 @@ function lMoHC(line, weeks, m){
 }
 // Total labor hrs all lines for one week
 function wkHC(week, m, wi){
-  return lines.reduce((s,l) => s + lWkHC(l,week,m,wi), 0);
+  return linesFor(m).reduce((s,l) => s + lWkHC(l,week,m,wi), 0);
 }
 
 // ════════════════════════════════
@@ -1493,7 +1532,7 @@ function backlogSeries(m,weeks,opening){
 
 // PG opening backlog rolled week by week against that PG's own lines → month-end value
 function pgBacklogClose(m,weeks,gKey){
-  const pgL=lines.filter(l=>l.pg===gKey);
+  const pgL=linesFor(m).filter(l=>l.pg===gKey);
   let bl=blOpenEff(m,gKey);
   weeks.forEach((w,wi)=>{
     const cap=pgL.reduce((s,l)=>s+lWkCap(l,w,m,wi),0);
@@ -1505,7 +1544,7 @@ function pgBacklogClose(m,weeks,gKey){
 // A line's share of its PG's opening backlog (demand share, falling back to capacity share),
 // rolled week by week against the line's own capacity
 function lineBacklog(m,weeks,line){
-  const pgL=lines.filter(x=>x.pg===line.pg);
+  const pgL=linesFor(m).filter(x=>x.pg===line.pg);
   const pgOpen=blOpenEff(m,line.pg);
   const pgDem=pgL.reduce((s,x)=>s+weeks.reduce((ws,w,wi)=>ws+lWkDem(x,w,m,wi,weeks),0),0);
   const pgCap=pgL.reduce((s,x)=>s+lMoCap(x,weeks,m),0);
@@ -1844,6 +1883,27 @@ function setShiftHCI(i,si,v){
   l.hcIS[si]=+v||0;
   render();
 }
+// Header, checkbox and copy list of the month-bound line set
+function renderLineScope(){
+  const month=curDate.getMonth(), year=curDate.getFullYear(), m=mk(curDate);
+  const own=!!lineOvr[m], label=`${MN[month]} ${year}`;
+  document.getElementById('lines-month-label').textContent=label;
+  document.getElementById('lines-ovr-month').textContent=label;
+  const cb=document.getElementById('lines-ovr-on');
+  if(document.activeElement!==cb) cb.checked=own;
+  const others=Object.keys(lineOvr).filter(k=>k!==m);
+  document.getElementById('lines-ovr-note').textContent=own
+    ? `This table belongs to ${label} alone. Other months keep the shared set${others.length?` (${others.length} more month(s) have their own).`:'.'}`
+    : `This table is the shared set: editing it changes every month that has no set of its own${others.length?` (${others.length} month(s) have one).`:'.'}`;
+  // offer to copy an allocation from any month that already has its own set
+  const wrap=document.getElementById('lines-copy-wrap'), sel=document.getElementById('lines-copy-from');
+  wrap.style.display=(own&&others.length)?'block':'none';
+  if(own&&others.length&&document.activeElement!==sel){
+    sel.innerHTML=`<option value="">Copy allocation from…</option>`+others
+      .sort()
+      .map(k=>{ const [y,mo]=k.split('-').map(Number); return `<option value="${k}">${MN[mo]} ${y}</option>`; }).join('');
+  }
+}
 // Toggle whether a line runs on a given shift (affects capacity and labor)
 function toggleShift(i,si){
   const l=lines[i];
@@ -1853,6 +1913,7 @@ function toggleShift(i,si){
 }
 function renderLines(){
   const body=document.getElementById('lines-body'); body.innerHTML='';
+  renderLineScope();
   // fixed pool of line names; a legacy custom name is kept as an extra option
   const nameOpts=cur=>{
     const names=Array.from({length:8},(_,n)=>`Line${n+1}`);
@@ -2057,7 +2118,9 @@ function renderMonthlyTable(){
   document.getElementById('monthly-title').textContent=`${MN[month]} ${year} — 6 months`;
   const tbl=document.getElementById('month-table'); tbl.innerHTML='';
   // capacity per product group as well, for groups that have lines assigned
-  const actPGs=PGS.filter(g=>lines.some(l=>l.pg===g.key));
+  // (in any of the six months shown, since the allocation can differ per month)
+  const shown=Array.from({length:6},(_,off)=>linesFor(mk(new Date(year,month+off,1))));
+  const actPGs=PGS.filter(g=>shown.some(set=>set.some(l=>l.pg===g.key)));
   const hd=tbl.createTHead(), hr=hd.insertRow();
   ['Month','Weeks',...actPGs.map(g=>g.label+' cap.'),'Total cap.','Demand','Util%','Free cap.'].forEach((h,i)=>{
     const th=document.createElement('th'); th.textContent=h;
@@ -2070,7 +2133,7 @@ function renderMonthlyTable(){
     const d=new Date(year,month+off,1), mn=d.getMonth(), yr=d.getFullYear(), m2=mk(d);
     const weeks=weeksOf(yr,mn); let cap=0,dem=0;
     weeks.forEach((w,wi)=>{ cap+=wkCap(w,m2,wi); dem+=wkDem(w,m2,wi,weeks); });
-    const pgCaps=actPGs.map(g=>lines.filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,weeks,m2),0));
+    const pgCaps=actPGs.map(g=>linesFor(m2).filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,weeks,m2),0));
     const ut=pct(dem,cap),sl=cap-dem;
     cA.push(cap); dA.push(dem); lA.push(`${MN[mn].slice(0,3)} ${yr}`);
     const tr=body.insertRow();
@@ -2457,7 +2520,8 @@ function exportCSV(){
     });
   }
   else if(activeTab==='monthly'){
-    const actPGs=PGS.filter(g=>lines.some(l=>l.pg===g.key));
+    const shown=Array.from({length:6},(_,off)=>linesFor(mk(new Date(year,month+off,1))));
+    const actPGs=PGS.filter(g=>shown.some(set=>set.some(l=>l.pg===g.key)));
     rows.push(['6-MONTH SUMMARY']);
     rows.push(['Month','Weeks',...actPGs.map(g=>g.label+' capacity'),'Total capacity','Demand','Util %','Free capacity']);
     for(let off=0;off<6;off++){
@@ -2465,7 +2529,7 @@ function exportCSV(){
       const wks=weeksOf(d.getFullYear(),d.getMonth());
       let cap=0,dem=0;
       wks.forEach((w,wi)=>{cap+=wkCap(w,m2,wi); dem+=wkDem(w,m2,wi,wks);});
-      const pgCaps=actPGs.map(g=>lines.filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,wks,m2),0));
+      const pgCaps=actPGs.map(g=>linesFor(m2).filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,wks,m2),0));
       rows.push([`${MN[d.getMonth()]} ${d.getFullYear()}`,wks.length,...pgCaps,cap,dem,pct(dem,cap),cap-dem]);
     }
   }
@@ -2600,7 +2664,7 @@ function exportCSV(){
 // ════════════════════════════════
 function snapshotState(){
   return JSON.parse(JSON.stringify({
-    lines, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, demandMode, demModeOvr,
+    lines:lineBase, lineOvr, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, demandMode, demModeOvr,
     mpsBasis, mpsSetupDef, rcDeadline,
     sliders:{
       shifts:  document.getElementById('shifts').value,
@@ -2611,7 +2675,9 @@ function snapshotState(){
   }));
 }
 function applyState(s){
-  lines=s.lines; pgDemand=s.pgDemand||{}; weekOvr=s.weekOvr||{}; blOpen=s.blOpen||{};
+  if(s.lines) lineBase=s.lines;
+  lineOvr=s.lineOvr||{}; syncLines();
+  pgDemand=s.pgDemand||{}; weekOvr=s.weekOvr||{}; blOpen=s.blOpen||{};
   calEvents=s.calEvents||{}; calSeeded=s.calSeeded||[];
   workforce=Object.assign({ops:0,contract:40,absence:8},s.workforce);
   wfOvr=s.wfOvr||{};
@@ -2757,7 +2823,7 @@ function mpsMonthShortfall(m){
   const days=new Date(y,mo+1,0).getDate();
   const isWork=d=>{const dt=new Date(y,mo,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
   const out={};
-  lines.forEach(l=>{
+  linesFor(m).forEach(l=>{
     const rows=mps.filter(r=>!r.unalloc&&r.line===l.name&&mkOfDate(r.date)===m);
     if(!rows.length) return;
     const cap=mpsDayCap(l);
@@ -3260,6 +3326,16 @@ function renderMPS(){
   document.getElementById('mps-batch-month').textContent=label;
   seedYear(year);
   const monthRows=mps.filter(r=>!r.unalloc&&mkOfDate(r.date)===m); // allocated (on grid)
+  // batches booked on a line this month does not run: they cannot sit on the grid,
+  // so name them explicitly instead of dropping them out of sight
+  const offRows=monthRows.filter(r=>!lines.some(l=>l.name===r.line));
+  const offNote=document.getElementById('mps-offline-note');
+  offNote.style.display=offRows.length?'block':'none';
+  if(offRows.length){
+    const names=[...new Set(offRows.map(r=>r.line))].join(', ');
+    offNote.textContent=`${offRows.length} batch(es) are planned on ${names}, which ${label} does not run. `
+      +`They stay in the Batches table below — move them to a running line, or give this month a line set that includes ${names}.`;
+  }
   const parkRows =mps.filter(r=>r.unalloc&&mkOfDate(r.date)===m);  // un-allocated (in tray)
   const totQty=monthRows.reduce((s,r)=>s+r.qty,0);
   const days=new Date(year,month+1,0).getDate();
@@ -3445,7 +3521,11 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
       :`<span style="font-size:10px;color:var(--text2);">${r.status||'—'}</span>`;
     bb.insertRow().innerHTML=`
       <td style="width:126px;"><input type="date" class="wni" style="width:118px;font-size:10px;text-align:left;padding:3px 5px;color-scheme:dark;" value="${r.date}" onchange="setBatchDate(${gi},this.value)"></td>
-      <td style="width:76px;"><select class="si" style="width:68px;" onchange="setBatchLine(${gi},this.value)">${lines.map(l2=>`<option value="${l2.name}"${l2.name===r.line?' selected':''}>${l2.name}</option>`).join('')}</select></td>
+      <td style="width:76px;"><select class="si" style="width:68px;${lines.some(l2=>l2.name===r.line)?'':'border-color:var(--yellow);color:var(--yellow);'}" onchange="setBatchLine(${gi},this.value)">${
+        // keep a line the month does not run as an option, so the row shows its real line
+        (lines.some(l2=>l2.name===r.line)?lines.map(l2=>l2.name):[r.line,...lines.map(l2=>l2.name)])
+          .map(n=>`<option value="${n}"${n===r.line?' selected':''}>${n}${lines.some(l2=>l2.name===n)?'':' (not this month)'}</option>`).join('')
+      }</select></td>
       <td class="c" style="width:44px;"><input data-k="b-${gi}-seq" class="wni" type="text" inputmode="numeric" style="width:38px;${coBatches.has(r)?'border-color:var(--yellow);':''}" value="${r.seq??''}" min="0" placeholder="—" title="Sequence within the day${coBatches.has(r)?' · ⇄ changeover (SKU change)':''}" oninput="setSeq(${gi},this.value)"></td>
       <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.job||'—'}</td>
       <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
@@ -4071,7 +4151,7 @@ function save(){
   captureUndoHistory();
   try{
     localStorage.setItem('ls_planner', JSON.stringify({
-      lines, pgDemand, weekOvr, demandMode, demModeOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, mpsBasis, mpsSetupDef, rcDeadline, scenarios,
+      lines:lineBase, lineOvr, pgDemand, weekOvr, demandMode, demModeOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, mpsBasis, mpsSetupDef, rcDeadline, scenarios,
       curDate: curDate.toISOString(),
       sliders: {
         shifts: document.getElementById('shifts').value,
@@ -4089,11 +4169,12 @@ function save(){
 function resetData(){
   if(!confirm('Reset all data to defaults?')) return;
   localStorage.removeItem('ls_planner');
-  lines=[
+  lineBase=[
     {name:'Line1',cap:450,demand:360,pg:'soda',   hc:4, hcDay:1},
     {name:'Line2',cap:300,demand:310,pg:'bottle',  hc:3, hcDay:1},
     {name:'Line3',cap:200,demand:140,pg:'rental',  hc:2, hcDay:0},
   ];
+  lineOvr={}; syncLines();
   pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; skus=[]; mps=[]; lineAlias={}; mpsBasis='units'; mpsSetupDef=0; rcDeadline=null; scenarios=[]; demandMode='pg'; demModeOvr={};
   curDate=new Date(); curDate.setDate(1);
   ['shifts','shiftlen','oee','days'].forEach(id=>{
@@ -4113,7 +4194,8 @@ function load(){
     const raw=localStorage.getItem('ls_planner');
     if(!raw) return;
     const d=JSON.parse(raw);
-    if(d.lines)      lines=d.lines;
+    if(d.lines)      lineBase=d.lines;
+    lineOvr=d.lineOvr||{};
     if(d.pgDemand)   pgDemand=d.pgDemand;
     if(d.weekOvr)    weekOvr=d.weekOvr;
     if(d.blOpen)     blOpen=d.blOpen;
@@ -4145,6 +4227,7 @@ function load(){
       if(rb) rb.checked=true;
     }
   }catch(e){}
+  syncLines();
 }
 
 // Tables are rebuilt from scratch on every render, which would drop the caret out
@@ -4190,7 +4273,8 @@ document.addEventListener('beforeinput',e=>{
 },true);
 function render(){
   const focus=focusSnapshot();
-  _spillMemo.key=null; // recompute cross-month MPS spill for this pass
+  syncLines();          // the month on screen may run its own line allocation
+  _spillMemo.key=null;  // recompute cross-month MPS spill for this pass
   document.getElementById('month-label').textContent=`${MN[curDate.getMonth()]} ${curDate.getFullYear()}`;
   renderMetrics();
   renderLines();
