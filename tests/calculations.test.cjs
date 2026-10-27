@@ -107,8 +107,18 @@ test('plan adherence is capped at planned quantity per batch',()=>{
 
 test('planner loads the calculation module before the application script',()=>{
   const html=fs.readFileSync(path.join(__dirname,'..','linesight_monthly_planner14.html'),'utf8');
-  const moduleAt=html.indexOf('<script src="./src/calculations.js"></script>');
+  const moduleAt=html.search(/<script src="\.\/src\/calculations\.js\?v=[a-f0-9]+"><\/script>/);
   const appAt=html.indexOf('<script>',moduleAt);
   assert.ok(moduleAt>=0,'calculation module script is missing');
   assert.ok(appAt>moduleAt,'calculation module must load before the application script');
+});
+
+test('local modules use content versions so deployments cannot reuse stale scripts',()=>{
+  const crypto=require('node:crypto');
+  const html=fs.readFileSync(path.join(__dirname,'..','linesight_monthly_planner14.html'),'utf8');
+  for(const name of ['calculations','production']){
+    const content=fs.readFileSync(path.join(__dirname,'..','src',name+'.js'),'utf8').replace(/\r\n/g,'\n');
+    const hash=crypto.createHash('sha256').update(content).digest('hex').slice(0,12);
+    assert.ok(html.includes(`./src/${name}.js?v=${hash}`),`${name} must have an up-to-date content version`);
+  }
 });
