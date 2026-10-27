@@ -1,0 +1,4 @@
+Start_Date;Due_Date;Line;Job_No;SKU;Qty;Product_Family;Description
+2026-10-01;2026-10-03;Line1;J1;SKU-A;100;Soda maker;Example A
+2026-10-05;2026-10-07;Line2;J2;SKU-B;200;Bottle;Example B
+2026-10-02;;Line3;J3;"SKU""><img src=x onerror=alert(1)>";40;Rental;"Text <b>must stay text</b>"

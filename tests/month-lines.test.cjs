@@ -16,12 +16,12 @@ test('the line set is resolved per month',()=>{
 
 test('month-scoped calculations read that month own line set',()=>{
   assert.match(html,/function wkCap\(week,m,wi\)\{ return linesFor\(m\)\./);
-  assert.match(html,/function wkDem\(week,m,wi,weeks\)\{ return linesFor\(m\)\./);
+  assert.match(html,/function wkDem\(week,m,wi,weeks\)\{ return PGS\.reduce/);
   assert.match(html,/function wkHC\(week, m, wi\)\{\s*return linesFor\(m\)\./);
   // backlog and MPS spill roll across months, so they must not read the visible month
-  assert.match(html,/const pgL=linesFor\(m\)\.filter\(l=>l\.pg===gKey\)/);
+  assert.match(html,/capacity\[g.key\]=linesFor\(m\)\.filter/);
   assert.match(html,/const pgL=linesFor\(m\)\.filter\(x=>x\.pg===line\.pg\)/);
-  assert.match(html,/linesFor\(m\)\.forEach\(l=>\{\s*const rows=mps\.filter/);
+  assert.match(html,/const line=linesFor\(m\)\.find\(l=>l\.name===name\)/);
 });
 
 test('the six-month summary uses each month own allocation',()=>{

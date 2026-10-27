@@ -46,12 +46,32 @@
 
   function monthEndCarry({daysInMonth=0,loadsByDay={},dayCapacity=0,isWorkingDay=()=>true}={}){
     let carry=0;
-    const capacity=Math.max(0,finite(dayCapacity));
     for(let day=1;day<=Math.max(0,Math.floor(finite(daysInMonth)));day++){
       const load=Math.max(0,finite(loadsByDay[day]));
+      const capacity=Math.max(0,finite(typeof dayCapacity==='function'?dayCapacity(day):dayCapacity));
       carry=Math.max(0,carry+load-(isWorkingDay(day)?capacity:0));
     }
     return carry;
+  }
+
+  // Cumulative rounding preserves the total exactly, including fractional days.
+  function distributeTotal(total,weights=[]){
+    const clean=weights.map(w=>Math.max(0,finite(w)));
+    const sum=clean.reduce((s,w)=>s+w,0);
+    let cumulative=0,allocated=0;
+    return clean.map(w=>{
+      cumulative+=w;
+      const next=sum>0?Math.round(Math.max(0,finite(total))*cumulative/sum):0;
+      const value=next-allocated; allocated=next;
+      return value;
+    });
+  }
+
+  function rollGroupBacklog(opening={},demand={},capacity={}){
+    const keys=new Set([...Object.keys(opening),...Object.keys(demand),...Object.keys(capacity)]);
+    return Object.fromEntries([...keys].map(k=>[k,Math.max(0,
+      finite(opening[k])+Math.max(0,finite(demand[k]))-Math.max(0,finite(capacity[k]))
+    )]));
   }
 
   function basisShortfallToUnits({carry=0,totalLoad=0,totalUnits=0}={}){
@@ -102,6 +122,8 @@
     availableLaborHours,
     operatorsNeeded,
     monthEndCarry,
+    distributeTotal,
+    rollGroupBacklog,
     basisShortfallToUnits,
     allocateUnitsByGroup,
     aggregateCompletions,

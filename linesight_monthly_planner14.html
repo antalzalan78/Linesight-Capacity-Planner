@@ -8,15 +8,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./src/calculations.js"></script>
+<script src="./src/production.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 :root{
-  --bg:#0f1117;--bg2:#171b24;--bg3:#1e2330;--border:rgba(255,255,255,0.08);
-  --text:#e8eaf0;--text2:#7a8299;
-  --green:#1D9E75;--green-l:#9FE1CB;--green-bg:rgba(29,158,117,0.13);
-  --blue:#378ADD;--blue-l:#B5D4F4;
-  --yellow:#EF9F27;--yellow-bg:rgba(239,159,39,0.13);
-  --red:#E24B4A;--red-bg:rgba(226,75,74,0.13);
+  color-scheme:light;
+  --bg:#f2f5f9;--bg2:#ffffff;--bg3:#eaf0f6;--border:#cbd5e1;
+  --text:#18283b;--text2:#506176;
+  --green:#08775a;--green-l:#066349;--green-bg:#e4f4ed;
+  --blue:#2466ad;--blue-l:#1d5794;
+  --yellow:#946000;--yellow-bg:#fff4d8;
+  --red:#bd363a;--red-bg:#fdebed;
+  --focus:rgba(8,119,90,0.22);--shadow:0 2px 8px rgba(24,40,59,0.045);
   --r:8px;--font:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -25,16 +28,17 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .header-left{display:flex;align-items:baseline;gap:12px;}
 .header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
 .logo{font-family:var(--mono);font-size:18px;font-weight:500;color:var(--green);}
-.header-title{font-size:13px;color:var(--text2);font-weight:300;}
+.header-title{font-size:13px;color:var(--text2);font-weight:400;}
 .month-nav{display:flex;align-items:center;gap:6px;}
 .nav-btn{background:var(--bg3);border:.5px solid var(--border);color:var(--text2);cursor:pointer;padding:5px 10px;border-radius:5px;font-size:14px;transition:color .15s;}
-.nav-btn:hover{color:var(--text);}
+.nav-btn:hover{color:var(--green);border-color:var(--green);}
 .month-label{font-family:var(--mono);font-size:13px;color:var(--text);min-width:130px;text-align:center;}
-.tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:var(--bg2);border:.5px solid var(--border);border-radius:var(--r);padding:4px;width:fit-content;}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:1.25rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:4px;width:fit-content;max-width:100%;}
 .tab{font-family:var(--mono);font-size:11px;padding:6px 16px;border-radius:5px;cursor:pointer;border:none;background:transparent;color:var(--text2);transition:all .15s;}
-.tab.active{background:var(--bg3);color:var(--text);border:.5px solid var(--border);}
+.tab:hover{background:var(--bg3);color:var(--text);}
+.tab.active{background:var(--green-bg);color:var(--green-l);box-shadow:inset 0 0 0 1px rgba(8,119,90,0.2);font-weight:500;}
 .metrics-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:1.25rem;}
-.metric{background:var(--bg2);border:.5px solid var(--border);border-radius:var(--r);padding:.85rem 1rem;}
+.metric{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:.85rem 1rem;box-shadow:var(--shadow);}
 .metric-label{font-size:10px;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;}
 .metric-val{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--text);}
 .metric-val.ok{color:var(--green);}.metric-val.warn{color:var(--yellow);}.metric-val.danger{color:var(--red);}
@@ -44,9 +48,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .col-right{min-width:0;overflow:hidden;}
 .col-right>*{margin-bottom:1.25rem;}
 .col-right>*:last-child{margin-bottom:0;}
-.card{background:var(--bg2);border:.5px solid var(--border);border-radius:var(--r);padding:1.25rem;margin-bottom:1.25rem;}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:1.25rem;margin-bottom:1.25rem;box-shadow:var(--shadow);}
 .card:last-child{margin-bottom:0;}
-.section-label{font-family:var(--mono);font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:1rem;}
+.section-label{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:1rem;}
 .param-row{margin-bottom:1.1rem;}
 .param-row:last-child{margin-bottom:0;}
 .param-label-row{display:flex;justify-content:space-between;margin-bottom:6px;}
@@ -67,9 +71,9 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #hc-weekly-table{table-layout:fixed;font-size:11px;}
 #hc-weekly-table td, #hc-weekly-table th{padding:4px 4px;overflow:hidden;}
 #lines-table td, #lines-table th{padding:4px 3px;}
-.mps-chip{cursor:grab;border-radius:3px;padding:1px 4px;margin:1px auto;background:rgba(255,255,255,0.07);white-space:nowrap;}
+.mps-chip{cursor:grab;border-radius:3px;padding:1px 4px;margin:1px auto;background:rgba(24,40,59,0.07);white-space:nowrap;}
 .mps-chip:active{cursor:grabbing;}
-.mps-chip.mps-done{opacity:.55;text-decoration:line-through;text-decoration-color:rgba(255,255,255,.4);}
+.mps-chip.mps-done{opacity:.75;text-decoration:line-through;text-decoration-color:currentColor;}
 .mps-chip.mps-co{border-left:2px solid var(--yellow);}
 .mps-tray-chip{display:inline-flex;align-items:center;gap:5px;cursor:grab;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--bg3);border:.5px solid var(--border);border-radius:5px;padding:3px 6px;}
 .mps-tray-chip:active{cursor:grabbing;}
@@ -80,16 +84,16 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #mps-tray.tray-over{background:rgba(29,158,117,0.1);border:2px dashed var(--green);}
 #lines-table .ni, #lines-table .numi{font-size:12px;padding:4px 4px;}
 #lines-table .si{font-size:10px;padding:4px 3px;}
-.gt th{font-family:var(--mono);font-size:10px;color:var(--text2);font-weight:400;padding:0 5px 8px;text-align:left;border-bottom:.5px solid var(--border);}
+.gt th{font-family:var(--mono);font-size:10px;color:var(--text2);font-weight:500;padding:0 5px 8px;text-align:left;border-bottom:1px solid var(--border);}
 .gt th.c{text-align:center;}
 .gt td{padding:5px 5px;vertical-align:middle;border-bottom:.5px solid var(--border);font-size:11px;}
 .gt tr:last-child td{border-bottom:none;}
 .gt td.c{text-align:center;}
-.gt .tot td{background:var(--bg3);font-family:var(--mono);font-weight:500;border-top:.5px solid rgba(255,255,255,0.12);}
+.gt .tot td{background:var(--bg3);font-family:var(--mono);font-weight:500;border-top:1px solid var(--border);}
 .ni{width:100%;font-family:var(--font);font-size:13px;padding:5px 8px;border:.5px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--text);}
 .numi{width:100%;font-family:var(--mono);font-size:13px;font-weight:500;padding:5px 6px;border:.5px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--text);text-align:center;}
 .ni:focus,.numi:focus{outline:none;border-color:var(--green);}
-.numi::placeholder{color:var(--text2);opacity:.55;}
+.ni::placeholder,.numi::placeholder{color:var(--text2);opacity:.85;}
 .numi::-webkit-outer-spin-button,.numi::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 .numi[type=number]{-moz-appearance:textfield;}
 .si{font-family:var(--mono);font-size:11px;padding:4px 6px;border:.5px solid var(--border);border-radius:4px;background:var(--bg3);color:var(--text);cursor:pointer;width:100%;}
@@ -122,6 +126,9 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .footer{margin-top:2rem;padding-top:1rem;border-top:.5px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--text2);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
 .divider{height:.5px;background:var(--border);margin:1rem 0;}
 .info-text{font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:1rem;}
+input[type=checkbox]{accent-color:var(--green);}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--green);outline-offset:2px;box-shadow:0 0 0 4px var(--focus);}
+button:disabled{opacity:.6;cursor:not-allowed;}
 /* ── Printable report ── */
 #report-view{display:none;}
 @media print{
@@ -235,7 +242,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         <div id="cal-list"></div>
         <div class="divider"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <input type="date" id="cal-date" class="ni" style="color-scheme:dark;">
+          <input type="date" id="cal-date" class="ni" style="color-scheme:light;">
           <select id="cal-type" class="si">
             <option value="maint">Maintenance / shutdown</option>
             <option value="holiday">Holiday / bridge day</option>
@@ -278,7 +285,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         </span>
       </div>
     </div>
-        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a weekend/holiday. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time, and <em>Run time/batch</em> uses each batch's actual run minutes (imported from HC_Total_Min / HC_Total_Hrs), the most reliable option when your sheet already carries it. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong> Completed batches (from the Status/Produced columns) show struck-through with a ✓; the Adherence tile tracks produced vs. planned.</p>
+        <p class="info-text" style="margin-bottom:.75rem;">Quantities are booked on the batch start day and automatically spill over into the following idle days (multi-day batches). <span style="color:var(--green-l);">Green</span> = fits in one day · <span style="color:var(--blue-l);">blue</span> = multi-day batch (↳ marks continuation days with the quantity produced there) · <span style="color:var(--red);">red</span> = load that cannot be absorbed before month-end · <span style="color:var(--yellow);">yellow</span> = batch starting on a day with no planned working time. Cells show the full planned quantity; hover a cell for the carry-over details. The <strong>capacity basis</strong> (top right) decides how a day fills up: <em>Units/day</em> uses each line's flat u/h rate, <em>Std. minutes/day</em> uses each SKU's standard minutes per unit plus setup time, and <em>Run time/batch</em> uses each batch's actual run minutes (imported from HC_Total_Min / HC_Total_Hrs), the most reliable option when your sheet already carries it. <strong>Each batch is its own chip — drag a chip onto another day or line to reschedule it, or into the un-allocated tray below to park it.</strong> Completed batches (from the Status/Produced columns) show struck-through with a ✓; Plan completion tracks dated produced units; On-time adherence uses the editable Due date.</p>
+        <p class="info-text">Daily capacity follows the Weekly View's Days and OEE settings. Available days fill from the start of the week: open weekdays first, then weekends. Fractional days have partial capacity; a manual Days override can reopen shutdown days. In MPS demand mode, weekly demand follows batch dates.</p>
         <div id="mps-offline-note" style="display:none;margin-bottom:8px;padding:7px 10px;border:.5px solid var(--yellow);border-radius:6px;background:rgba(239,159,39,0.08);font-size:11px;color:var(--yellow);"></div>
         <div style="overflow-x:auto;"><table class="gt" id="mps-grid"></table></div>
     <div class="section-label" style="margin:14px 0 6px;">Weekly load by line <span style="text-transform:none;letter-spacing:0;color:var(--text2);">— booked load vs. available capacity per week</span></div>
@@ -299,14 +307,14 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
           <select id="mf-line" class="si" style="width:110px;" onchange="mpsFltLine=this.value;render()"></select>
           <select id="mf-pg" class="si" style="width:130px;" onchange="mpsFltPg=this.value;render()"></select>
-          <input type="date" id="mf-date" class="ni" style="width:150px;color-scheme:dark;" onchange="mpsFltDate=this.value;render()" title="Filter to a single day">
+          <input type="date" id="mf-date" class="ni" style="width:150px;color-scheme:light;" onchange="mpsFltDate=this.value;render()" title="Filter to a single day">
           <button class="add-btn" style="margin-top:0;padding:4px 10px;" onclick="mpsFltLine='';mpsFltPg='';mpsFltDate='';render()">✕ Clear</button>
           <span id="mf-count" style="font-size:10px;color:var(--text2);margin-left:auto;"></span>
         </div>
         <div style="overflow-x:auto;max-height:420px;overflow-y:auto;"><table class="gt" id="mps-batch-table"></table></div>
         <div class="divider"></div>
         <div style="display:grid;grid-template-columns:130px 80px 120px 1fr 76px auto;gap:8px;align-items:center;">
-          <input type="date" id="mb-date" class="ni" style="color-scheme:dark;">
+          <input type="date" id="mb-date" class="ni" style="color-scheme:light;">
           <select id="mb-line" class="si"></select>
           <input type="text" id="mb-job" class="ni" placeholder="Job no. (opt.)">
           <input type="text" id="mb-sku" class="ni" placeholder="SKU code" list="sku-datalist">
@@ -315,6 +323,11 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         </div>
         <datalist id="sku-datalist"></datalist>
       </div>
+  <div class="card">
+    <div class="section-label">Actual production by day — selected month</div>
+    <p class="info-text">Net units by actual transaction date, including retained unmatched jobs and dated manual corrections. Undated actuals are excluded until a date is supplied.</p>
+    <div style="overflow:auto;max-height:240px;"><table class="gt" id="production-daily-table"></table></div>
+  </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1.25rem;align-items:start;">
     <div class="card">
       <div class="section-label">MPS import (Excel / CSV)</div>
@@ -330,10 +343,20 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     </div>
     <div class="card">
       <div class="section-label">Production Completion import</div>
-      <p class="info-text">Load the daily NetSuite Production Completion export. Completion rows are summed by <strong>Job + Transaction Date</strong> and matched to the MPS by Job no. Re-importing the same day replaces that day's total, so quantities are not duplicated.</p>
+      <p class="info-text">Use a full <strong>Job + Transaction Date</strong> daily total export. A decrease requires explicit approval. Unmatched jobs are retained and automatically linked when their MPS batch is added. For incremental files, use unique completion IDs.</p>
+      <select id="completion-mode" class="si" style="margin-bottom:8px;" onchange="completionPreview()">
+        <option value="snapshot">Full Job/day totals (NetSuite sample format)</option>
+        <option value="events">Incremental — unique Completion / Internal ID required</option>
+      </select>
+      <label style="display:flex;gap:8px;font-size:11px;margin-bottom:10px;"><input type="checkbox" id="completion-corrections" onchange="completionPreview()">Approve decreases, changed import modes and replacement of manual corrections</label>
       <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('completion-file').click()">⬆ Choose NetSuite Excel/CSV…</button>
       <input type="file" id="completion-file" accept=".xlsx,.xlsm,.xls,.csv" style="display:none" onchange="completionFile(this.files[0]);this.value=''">
       <div id="completion-preview" style="margin-top:10px;"></div>
+      <div id="completion-unmatched" style="margin-top:10px;"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button class="add-btn" style="margin-top:0;" onclick="exportProductionLog()">Export production log CSV</button>
+        <button class="add-btn" style="margin-top:0;" onclick="exportProductionBackup()">Download production backup</button>
+      </div>
     </div>
     <div class="card">
       <div class="section-label">SKU master</div>
@@ -368,7 +391,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         <div class="section-label">Opening backlog — by product group</div>
         <p class="info-text">
           <strong>Opening backlog</strong> = unfulfilled demand carried into this month from earlier periods, per product group. Any <span style="color:var(--yellow);">MPS spill-over</span> (batches the previous month could not produce) is added automatically on top of the manual value.<br>
-          Weekly backlog = max(0, previous backlog + demand − capacity). Free capacity in a week works the backlog down. The value next to each input shows that group's projected month-end backlog.
+          Weekly backlog = max(0, previous backlog + demand − capacity), calculated separately for each product group. Only that group's capacity reduces its backlog. Groups without a running line keep their demand and backlog in the totals. The value next to each input shows that group's projected month-end backlog.
         </p>
         <div id="bl-open-grid"></div>
         <div class="divider"></div>
@@ -387,7 +410,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
         <p class="info-text">Pick a deadline — the plan is projected forward (across months) and if backlog remains, the calculator shows how many extra shifts or weekend days are needed to clear it in time.</p>
         <div class="param-row">
           <div class="param-label-row"><span class="param-label">Deadline</span></div>
-          <input type="date" id="rc-date" class="ni" style="color-scheme:dark;" onchange="rcDeadline=this.value;render()">
+          <input type="date" id="rc-date" class="ni" style="color-scheme:light;" onchange="rcDeadline=this.value;render()">
         </div>
         <div id="rc-output"></div>
       </div>
@@ -595,6 +618,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 <!-- ══ CHART ══ -->
 <div class="view-panel" id="panel-chart">
   <div class="metrics-strip" id="kpi-strip" style="margin-bottom:1.25rem;"></div>
+  <div class="metrics-strip" id="production-kpi-strip"></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(460px,1fr));gap:1.25rem;align-items:start;margin-bottom:1.25rem;">
     <div class="card">
       <div class="section-label">KPI by line — <span id="kpi-line-month"></span></div>
@@ -765,6 +789,13 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <p class="info-text">
       Secure cloud sync requires a signed-in user and Row Level Security. Changes push automatically a few seconds after each edit; local planning remains available while signed out.
     </p>
+    <div id="sync-conflict" style="display:none;padding:12px;margin-bottom:12px;border:1px solid var(--yellow);border-radius:6px;background:var(--yellow-bg);">
+      <p class="info-text" style="margin-bottom:8px;">Your local plan and the cloud plan differ. Automatic sync is paused and your local changes are kept. Choose which plan to continue with. A local recovery version is saved before replacing a plan.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="add-btn" style="margin-top:0;" onclick="resolveSyncConflict('local')">Keep my local plan</button>
+        <button class="add-btn" style="margin-top:0;" onclick="resolveSyncConflict('cloud')">Load the cloud plan</button>
+      </div>
+    </div>
     <div class="param-row">
       <div class="param-label-row"><span class="param-label">Supabase project URL</span></div>
       <input type="text" id="sy-url" class="ni" placeholder="https://xxxx.supabase.co" autocomplete="off">
@@ -855,6 +886,7 @@ let rcDeadline = null; // 'YYYY-MM-DD' — backlog recovery calculator deadline
 let scenarios  = [];   // [{name, ts, state}] — full plan snapshots for comparison
 let skus       = [];   // [{code, pg, name}] — SKU master; pg null = unassigned
 let mps        = [];   // [{date:'YYYY-MM-DD', line, sku, qty}] — daily batch plan
+let productionLedger = {}, productionImportInfo = null;
 let lineAlias  = {};   // ['CFC-L3'] = 'Line3' — remembered import line-name mappings
 let mpsBasis   = 'units'; // 'units' | 'min' — MPS daily-load capacity basis
 let mpsSetupDef= 0;       // default changeover minutes per batch (used in std-minutes basis)
@@ -880,8 +912,9 @@ const getP = () => ({
 });
 const mk    = d => `${d.getFullYear()}-${d.getMonth()}`;
 const hu    = n => Math.round(n).toLocaleString('en-GB');
+const esc   = LineSightProduction.escapeHTML;
 const pct   = LineSightCalc.percent;
-const bCol  = p => p>95?'#E24B4A':p>80?'#EF9F27':'#1D9E75';
+const bCol  = p => p>95?'#bd363a':p>80?'#946000':'#08775a';
 const tCol  = p => p>95?'var(--red)':p>80?'var(--yellow)':'var(--green)';
 const pCls  = p => p>95?'pill-danger':p>80?'pill-warn':'pill-ok';
 const pTxt  = p => p>95?'Overloaded':p>80?'High':'OK';
@@ -913,7 +946,7 @@ function copyLinesFrom(m2){
 }
 
 function getOvr(m,wi,f,def){ return (weekOvr[m]?.[wi]?.[f]!==undefined)?weekOvr[m][wi][f]:def; }
-function setOvr(m,wi,f,v){ if(!weekOvr[m])weekOvr[m]={}; if(!weekOvr[m][wi])weekOvr[m][wi]={}; weekOvr[m][wi][f]=v; }
+function setOvr(m,wi,f,v){ if(!weekOvr[m])weekOvr[m]={}; if(!weekOvr[m][wi])weekOvr[m][wi]={}; weekOvr[m][wi][f]=v; _calendarMemo={}; _spillMemo.key=null; }
 function getPGD(m,k){ return pgDemand[m]?.[k]||0; }
 function setPGD(m,k,v){ if(!pgDemand[m])pgDemand[m]={}; pgDemand[m][k]=v; }
 // Monthly demand for a product group from the batch plan (sum of that PG's batch quantities in the month)
@@ -979,8 +1012,36 @@ function wkHolidays(week,month){
 function effDays(week,m,wi){
   const p=getP();
   const month=+m.split('-')[1];
-  const def=Math.max(0,Math.min(week.workDays,p.days)-wkHolidays(week,month).length);
-  return getOvr(m,wi,'days',def);
+  const count=weekDates(week,m).length;
+  const eligible=p.days>5?count:week.workDays;
+  const holidays=p.days>5?weekDates(week,m).filter(d=>calEvents[dk(d)]).length:wkHolidays(week,month).length;
+  const def=Math.max(0,Math.min(eligible,p.days)-holidays);
+  return Math.min(count,Math.max(0,getOvr(m,wi,'days',def)));
+}
+
+function weekDates(week,m){
+  const [y,mo]=m.split('-').map(Number),out=[];
+  for(let d=new Date(week.start);d<=week.end;d.setDate(d.getDate()+1))
+    if(d.getFullYear()===y&&d.getMonth()===mo) out.push(new Date(d));
+  return out;
+}
+let _calendarMemo={};
+function workingCalendar(m){
+  if(_calendarMemo[m]) return _calendarMemo[m];
+  const [y,mo]=m.split('-').map(Number); seedYear(y);
+  const out={};
+  weeksOf(y,mo).forEach((w,wi)=>{
+    const dates=weekDates(w,m);
+    const rank=d=>calEvents[dk(d)]?2:(d.getDay()===0||d.getDay()===6)?1:0;
+    dates.sort((a,b)=>rank(a)-rank(b)||a-b);
+    let remaining=effDays(w,m,wi);
+    dates.forEach(d=>{out[d.getDate()]={weight:Math.min(1,remaining),wi};remaining=Math.max(0,remaining-1);});
+  });
+  return _calendarMemo[m]=out;
+}
+function weekLineOEE(line,m,wi){
+  const base=Math.round(getP().oee*100),weekly=getOvr(m,wi,'oee',base);
+  return base>0?(line.oee??base)*(weekly/base)/100:0;
 }
 
 function weeksOf(year,month){
@@ -1006,9 +1067,7 @@ function weeksOf(year,month){
 function lWkCap(line,week,m,wi){
   const p=getP();
   const days=effDays(week,m,wi);
-  const base=Math.round(p.oee*100);
-  const wk  =getOvr(m,wi,'oee',base);
-  const oee =(line.oee??base)*(wk/base)/100;
+  const oee=weekLineOEE(line,m,wi);
   // capacity counts only the shifts this line actually runs (per-shift line activity)
   return Math.round(line.cap*oee*p.shiftlen*nActiveShifts(line)*days);
 }
@@ -1029,21 +1088,30 @@ function lWkDem(line,week,m,wi,weeks){
   }
   // pg / mps mode: distribute PG monthly demand to this line by cap share, then weekly by week cap share
   const pgKey=line.pg;
-  const monthDem=pgDem(m,pgKey);
-  if(monthDem===0) return 0;
+  const weekDem=pgWeekDem(m,pgKey,weeks,wi);
+  if(weekDem===0) return 0;
   // all lines in same PG
   const pgLines=linesFor(m).filter(l=>l.pg===pgKey);
-  const pgMoCap=pgLines.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
-  if(pgMoCap===0) return 0;
-  const lMC=lMoCap(line,weeks,m);
-  const lineShare=lMC/pgMoCap;           // this line's fraction of PG total cap
-  const lineMoDem=monthDem*lineShare;    // demand allocated to this line this month
-  if(lMC===0) return 0;
-  return Math.round(lineMoDem*(lWkCap(line,week,m,wi)/lMC)); // weekly split by cap proportion
+  let weights=pgLines.map(l=>lWkCap(l,week,m,wi));
+  if(!weights.some(v=>v>0)) weights=pgLines.map(()=>1);
+  return LineSightCalc.distributeTotal(weekDem,weights)[pgLines.indexOf(line)]||0;
 }
 
+function pgWeekDem(m,key,weeks,wi){
+  if(demandModeFor(m)==='rate') return linesFor(m).filter(l=>l.pg===key).reduce((s,l)=>s+lWkDem(l,weeks[wi],m,wi,weeks),0);
+  if(demandModeFor(m)==='mps'){
+    const dates=new Set(weekDates(weeks[wi],m).map(dk));
+    return mps.reduce((s,r)=>s+(skuOf(r.sku)?.pg===key&&dates.has(r.date)?r.qty:0),0);
+  }
+  const set=linesFor(m).filter(l=>l.pg===key);
+  let weights=weeks.map((w,i)=>set.reduce((s,l)=>s+lWkCap(l,w,m,i),0));
+  if(!weights.some(v=>v>0)) weights=weeks.map(w=>weekDates(w,m).length);
+  return LineSightCalc.distributeTotal(pgDem(m,key),weights)[wi]||0;
+}
+function pgMonthDem(m,key,weeks){return weeks.reduce((s,w,wi)=>s+pgWeekDem(m,key,weeks,wi),0);}
+
 // Total demand all lines for one week
-function wkDem(week,m,wi,weeks){ return linesFor(m).reduce((s,l)=>s+lWkDem(l,week,m,wi,weeks),0); }
+function wkDem(week,m,wi,weeks){ return PGS.reduce((s,g)=>s+pgWeekDem(m,g.key,weeks,wi),0); }
 
 // ════════════════════════════════
 // HEADCOUNT CALC  (labor hours)
@@ -1457,7 +1525,7 @@ function renderHeadcount(){
     const moD=weeks.reduce((s,w,wi)=>s+lWkHCday(l,w,m,wi),0);
     const tr=lb.insertRow();
     tr.innerHTML=`
-      <td style="font-size:12px;">${l.name}</td>
+      <td style="font-size:12px;">${esc(l.name)}</td>
       <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
       <td class="c" style="font-family:var(--mono);font-weight:500;" title="per active shift">${shiftHCLabel(l)}</td>
       <td class="c" style="font-family:var(--mono);font-weight:500;" title="per active shift">${shiftHCILabel(l)}</td>
@@ -1486,10 +1554,10 @@ function renderHeadcount(){
       ]
     },
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      plugins:{legend:{labels:{color:'#506176',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
       scales:{
-        x:{stacked:true,ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}},
-        y:{stacked:true,ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'},title:{display:true,text:'labor hrs',color:'#7a8299',font:{size:10}}}
+        x:{stacked:true,ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}},
+        y:{stacked:true,ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'},title:{display:true,text:'labor hrs',color:'#506176',font:{size:10}}}
       }}
   });
 
@@ -1509,10 +1577,10 @@ function renderHeadcount(){
       ]
     },
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      plugins:{legend:{labels:{color:'#506176',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
       scales:{
-        y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
-        x:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+        y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
+        x:{ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
       }}
   });
 }
@@ -1522,24 +1590,25 @@ function renderHeadcount(){
 // ════════════════════════════════
 // Weekly backlog series: bl_w = max(0, bl_{w-1} + demand_w - capacity_w)
 function backlogSeries(m,weeks,opening){
-  let bl=opening;
+  let groups=opening&&typeof opening==='object'?{...opening}:backlogOpening(m);
   return weeks.map((w,wi)=>{
-    const cap=wkCap(w,m,wi), dem=wkDem(w,m,wi,weeks);
-    bl=Math.max(0, bl+dem-cap);
-    return {cap, dem, net:cap-dem, bl};
+    const demand={},capacity={};
+    PGS.forEach(g=>{
+      demand[g.key]=pgWeekDem(m,g.key,weeks,wi);
+      capacity[g.key]=linesFor(m).filter(l=>l.pg===g.key).reduce((s,l)=>s+lWkCap(l,w,m,wi),0);
+    });
+    groups=LineSightCalc.rollGroupBacklog(groups,demand,capacity);
+    const cap=Object.values(capacity).reduce((s,v)=>s+v,0),dem=Object.values(demand).reduce((s,v)=>s+v,0);
+    const bl=Object.values(groups).reduce((s,v)=>s+v,0);
+    return {cap,dem,net:cap-dem,bl,groups:{...groups}};
   });
 }
+function backlogOpening(m){ return Object.fromEntries(PGS.map(g=>[g.key,blOpenEff(m,g.key)])); }
 
 // PG opening backlog rolled week by week against that PG's own lines → month-end value
 function pgBacklogClose(m,weeks,gKey){
-  const pgL=linesFor(m).filter(l=>l.pg===gKey);
-  let bl=blOpenEff(m,gKey);
-  weeks.forEach((w,wi)=>{
-    const cap=pgL.reduce((s,l)=>s+lWkCap(l,w,m,wi),0);
-    const dem=pgL.reduce((s,l)=>s+lWkDem(l,w,m,wi,weeks),0);
-    bl=Math.max(0, bl+dem-cap);
-  });
-  return bl;
+  const series=backlogSeries(m,weeks,backlogOpening(m));
+  return series.length?series[series.length-1].groups[gKey]||0:blOpenEff(m,gKey);
 }
 // A line's share of its PG's opening backlog (demand share, falling back to capacity share),
 // rolled week by week against the line's own capacity
@@ -1549,8 +1618,9 @@ function lineBacklog(m,weeks,line){
   const pgDem=pgL.reduce((s,x)=>s+weeks.reduce((ws,w,wi)=>ws+lWkDem(x,w,m,wi,weeks),0),0);
   const pgCap=pgL.reduce((s,x)=>s+lMoCap(x,weeks,m),0);
   const moDem=weeks.reduce((s,w,wi)=>s+lWkDem(line,w,m,wi,weeks),0);
-  const open=pgDem>0?Math.round(pgOpen*moDem/pgDem)
-            :pgCap>0?Math.round(pgOpen*lMoCap(line,weeks,m)/pgCap):0;
+  let weights=pgL.map(l=>pgDem>0?weeks.reduce((s,w,wi)=>s+lWkDem(l,w,m,wi,weeks),0):lMoCap(l,weeks,m));
+  if(!weights.some(v=>v>0))weights=pgL.map(()=>1);
+  const open=LineSightCalc.distributeTotal(pgOpen,weights)[pgL.indexOf(line)]||0;
   let bl=open;
   weeks.forEach((w,wi)=>{ bl=Math.max(0, bl+lWkDem(line,w,m,wi,weeks)-lWkCap(line,w,m,wi)); });
   return {open, close:bl};
@@ -1559,27 +1629,28 @@ function lineBacklog(m,weeks,line){
 // Roll the total backlog forward from the current month, week by week,
 // until the deadline. Returns the projected backlog and where it first cleared.
 function backlogAtDate(deadline){
-  let carry=totBLOpen(mk(curDate));
+  let groups=backlogOpening(mk(curDate));
+  let carry=Object.values(groups).reduce((s,v)=>s+v,0);
   let clearedAt=null, hadBL=carry>0;
   const start=new Date(curDate.getFullYear(),curDate.getMonth(),1);
-  if(deadline<start) return {bl:carry, clearedAt:null, invalid:true};
+  if(deadline<start) return {bl:carry,groups,clearedAt:null,invalid:true};
   for(let off=0; off<24; off++){
     const d=new Date(start.getFullYear(), start.getMonth()+off, 1);
     if(d>deadline) break;
     const m2=mk(d), wks=weeksOf(d.getFullYear(), d.getMonth());
+    const series=backlogSeries(m2,wks,groups);
     for(let wi=0; wi<wks.length; wi++){
       const w=wks[wi];
-      if(w.start>deadline) return {bl:carry, clearedAt};
-      const cap=wkCap(w,m2,wi), dem=wkDem(w,m2,wi,wks);
+      if(w.start>deadline) return {bl:carry,groups,clearedAt};
       const prev=carry;
-      carry=Math.max(0, carry+dem-cap);
+      carry=series[wi].bl; groups=series[wi].groups;
       if(carry>0) hadBL=true;
       if(hadBL&&carry===0&&prev>0&&!clearedAt)
         clearedAt=`${w.label} ${MN[d.getMonth()].slice(0,3)} ${d.getFullYear()}`;
-      if(w.end>=deadline) return {bl:carry, clearedAt};
+      if(w.end>=deadline) return {bl:carry,groups,clearedAt};
     }
   }
-  return {bl:carry, clearedAt};
+  return {bl:carry,groups,clearedAt};
 }
 // Units produced by ONE extra shift on one day, all lines at their own OEE
 function extraShiftUnits(){
@@ -1689,7 +1760,7 @@ function renderBacklog(){
     lineOpenSum+=lOpen; lineCloseSum+=bl;
     const tr=lb.insertRow();
     tr.innerHTML=`
-      <td style="font-size:12px;">${l.name}</td>
+      <td style="font-size:12px;">${esc(l.name)}</td>
       <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
       <td class="c" style="font-family:var(--mono);color:var(--text2);">${hu(lOpen)}</td>
       <td class="c" style="font-family:var(--mono);font-weight:500;color:${bl>0?'var(--red)':'var(--green)'};">${hu(bl)}</td>
@@ -1712,8 +1783,13 @@ function renderBacklog(){
   const deadline=new Date(ry,rmo-1,rda);
   const rcOut=document.getElementById('rc-output');
   const res=backlogAtDate(deadline);
-  const uShift=extraShiftUnits();
   const p2=getP();
+  const recoveryLines=linesFor(mk(deadline));
+  const recoveryGroups=PGS.filter(g=>(res.groups?.[g.key]||0)>0).map(g=>({
+    ...g,units:res.groups[g.key],shiftUnits:recoveryLines.filter(l=>l.pg===g.key).reduce((s,l)=>s+l.cap*((l.oee??Math.round(p2.oee*100))/100)*p2.shiftlen,0)
+  }));
+  const blockedGroups=recoveryGroups.filter(g=>g.shiftUnits<=0);
+  const uShift=recoveryGroups.reduce((s,g)=>s+g.shiftUnits,0);
   const dstr=deadline.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
   if(res.invalid){
     rcOut.innerHTML=`<div class="info-text" style="margin:0;">The deadline is before ${MN[month]} ${year} — pick a later date.</div>`;
@@ -1721,11 +1797,12 @@ function renderBacklog(){
     rcOut.innerHTML=`<div style="font-size:12px;color:var(--green);">✓ No backlog in the plan — nothing to recover.</div>`;
   } else if(res.bl===0){
     rcOut.innerHTML=`<div style="font-size:12px;color:var(--green);">✓ Cleared with the current plan${res.clearedAt?` by <strong>${res.clearedAt}</strong>`:''} — no extra capacity needed by ${dstr}.</div>`;
-  } else if(uShift<=0){
-    rcOut.innerHTML=`<div class="info-text" style="margin:0;">No line capacity defined — cannot calculate extra shifts.</div>`;
+  } else if(blockedGroups.length||uShift<=0){
+    rcOut.textContent='Cannot clear this backlog with extra shifts: '+blockedGroups.map(g=>g.label+' ('+hu(g.units)+' units)').join(', ')+'. Assign capacity to these product groups first.';
   } else {
     const uDay=uShift*p2.shifts;
-    const nShift=Math.ceil(res.bl/uShift), nDay=Math.ceil(res.bl/uDay);
+    const nShift=Math.max(...recoveryGroups.map(g=>Math.ceil(g.units/g.shiftUnits)));
+    const nDay=Math.max(...recoveryGroups.map(g=>Math.ceil(g.units/(g.shiftUnits*p2.shifts))));
     const hcShiftSum=lines.reduce((s,l)=>s+totShiftHC(l),0)/Math.max(1,p2.shifts); // avg operators per shift
     const hcDaySum=lines.reduce((s,l)=>s+totShiftHCI(l),0)/Math.max(1,p2.shifts); // avg indirect per shift
     const laborShift=hcShiftSum*p2.shiftlen;                      // one extra shift-day (direct operators only)
@@ -1759,22 +1836,22 @@ function renderBacklog(){
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{
-        y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
-        x:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+        y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
+        x:{ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
       }}
   });
 
   // ── 6-month projection: chain month-end backlog forward ──
   const moLabels=[], moBL=[], moNet=[];
-  let carry=opening;
+  let carry=backlogOpening(m);
   for(let off=0;off<6;off++){
     const d=new Date(year,month+off,1), m2=mk(d);
     const wks=weeksOf(d.getFullYear(),d.getMonth());
     const ser=backlogSeries(m2,wks,carry);
     const net=ser.reduce((s,v)=>s+v.net,0);
-    carry=ser.length?ser[ser.length-1].bl:carry;
+    carry=ser.length?ser[ser.length-1].groups:carry;
     moLabels.push(`${MN[d.getMonth()].slice(0,3)} ${d.getFullYear()}`);
-    moBL.push(carry); moNet.push(net);
+    moBL.push(Object.values(carry).reduce((s,v)=>s+v,0)); moNet.push(net);
   }
   destroyChart('blMoChart');
   charts['blMoChart']=new Chart(document.getElementById('blMoChart').getContext('2d'),{
@@ -1786,10 +1863,10 @@ function renderBacklog(){
         borderColor:'#1D9E75',backgroundColor:'transparent',borderWidth:2,pointRadius:4,borderDash:[4,3]},
     ]},
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      plugins:{legend:{labels:{color:'#506176',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
       scales:{
-        y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
-        x:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}
+        y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
+        x:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}
       }}
   });
 }
@@ -1918,7 +1995,7 @@ function renderLines(){
   const nameOpts=cur=>{
     const names=Array.from({length:8},(_,n)=>`Line${n+1}`);
     if(cur&&!names.includes(cur)) names.unshift(cur);
-    return names.map(n=>`<option value="${n}"${n===cur?' selected':''}>${n}</option>`).join('');
+    return names.map(n=>`<option value="${esc(n)}"${n===cur?' selected':''}>${esc(n)}</option>`).join('');
   };
   lines.forEach((l,i)=>{
     const opts=PGS.map(g=>`<option value="${g.key}"${g.key===l.pg?' selected':''}>${g.label}</option>`).join('');
@@ -2004,7 +2081,7 @@ function renderLineUtil(weeks,m){
     const ut=pct(dem,cap);
     const tr=body.insertRow();
     tr.innerHTML=`
-      <td style="font-size:13px;">${l.name}</td>
+      <td style="font-size:13px;">${esc(l.name)}</td>
       <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
       <td class="c" style="font-family:var(--mono);color:${l.oee!=null?'var(--text)':'var(--text2)'};" title="${l.oee!=null?'line-specific':'inherited from base'}">${l.oee??Math.round(getP().oee*100)}%</td>
       <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(cap)}</td>
@@ -2105,7 +2182,7 @@ function renderDemandView(){
         borderWidth:1
       }]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:'right',labels:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}}}
+        plugins:{legend:{position:'right',labels:{color:'#506176',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}}}
     });
   }
 }
@@ -2155,8 +2232,8 @@ function renderMonthlyTable(){
       {label:'Igény',    data:dA,backgroundColor:'rgba(55,138,221,0.4)',borderColor:'#378ADD',borderWidth:1},
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
-              x:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}}}
+      scales:{y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
+              x:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}}}
   });
 }
 
@@ -2178,11 +2255,9 @@ function monthKPI(d){
     const avail=weeks.reduce((s,w,wi)=>s+(wfTotalOps(W)+wfTotalOps(W,"ind"))*dailyH*absF*effDays(w,m,wi),0);
     coverage=Math.round(avail/labor*100);
   }
-  const rows=mps.filter(r=>mkOfDate(r.date)===m);
-  const planned=rows.reduce((s,r)=>s+r.qty,0);
-  const adherence=(planned>0&&rows.some(r=>r.produced>0||r.status))?LineSightCalc.cappedAdherence(rows):null;
+  const production=productionMonth(d),adherence=production.adherence;
   const spill=Object.values(mpsMonthShortfall(m)).reduce((s,v)=>s+v,0);
-  return {m,weeks,cap,dem,util:pct(dem,cap),free:cap-dem,labor,coverage,closing,adherence,spill};
+  return {m,weeks,cap,dem,util:pct(dem,cap),free:cap-dem,labor,coverage,closing,adherence,spill,production};
 }
 
 // KPI strip + KPI tables on the Charts tab
@@ -2196,9 +2271,10 @@ function renderKPIs(year,month,m,weeks){
     <div class="metric"><div class="metric-label">Utilisation</div><div class="metric-val ${mCls(cur.util)}">${cur.util}%</div><div class="metric-sub">${dPP(cur.util,prev.util)}</div></div>
     <div class="metric"><div class="metric-label">Capacity gap</div><div class="metric-val ${cur.free<0?'danger':'ok'}">${cur.free>=0?'+':''}${hu(cur.free)}</div><div class="metric-sub">${cur.free<0?'capacity shortage':'free units this month'}</div></div>
     <div class="metric"><div class="metric-label">Backlog / spill-over</div><div class="metric-val ${cur.closing>0||cur.spill>0?'danger':'ok'}">${hu(cur.closing)} / ${hu(cur.spill)}</div><div class="metric-sub">closing backlog / MPS spill</div></div>
-    <div class="metric"><div class="metric-label">Adherence</div><div class="metric-val ${cur.adherence==null?'':cur.adherence>=95?'ok':cur.adherence>=80?'warn':'danger'}">${cur.adherence==null?'—':cur.adherence+'%'}</div><div class="metric-sub">${cur.adherence==null?'no actuals yet':'produced vs. planned'}</div></div>
+    <div class="metric"><div class="metric-label">On-time adherence</div><div class="metric-val ${cur.adherence==null?'':cur.adherence>=95?'ok':cur.adherence>=80?'warn':'danger'}">${cur.adherence==null?'—':cur.adherence+'%'}</div><div class="metric-sub">${cur.production.onTime} / ${cur.production.due} batches due by ${esc(cur.production.cutoff)}</div></div>
     <div class="metric"><div class="metric-label">Workforce coverage</div><div class="metric-val ${cur.coverage==null?'':cur.coverage>=100?'ok':cur.coverage>=90?'warn':'danger'}">${cur.coverage==null?'—':cur.coverage+'%'}</div><div class="metric-sub">${cur.coverage==null?'workforce check off':dPP(cur.coverage,prev.coverage)}</div></div>
   `;
+  document.getElementById('production-kpi-strip').innerHTML=productionTiles(cur.production);
 
   // ── KPI by line ──
   document.getElementById('kpi-line-month').textContent=`${MN[month]} ${year}`;
@@ -2217,7 +2293,7 @@ function renderKPIs(year,month,m,weeks){
     const ut=pct(dem,cap);
     tC+=cap; tD+=dem; tL+=labor; tB+=bl;
     lb.insertRow().innerHTML=`
-      <td style="font-size:12px;">${l.name}</td>
+      <td style="font-size:12px;">${esc(l.name)}</td>
       <td><span class="pg-dot" style="background:${g.color};"></span><span style="font-size:11px;">${g.label}</span></td>
       <td class="c" style="font-family:var(--mono);color:${l.oee!=null?'var(--text)':'var(--text2)'};">${l.oee??base}%</td>
       <td class="c" style="font-family:var(--mono);color:var(--green-l);">${hu(cap)}</td>
@@ -2227,6 +2303,15 @@ function renderKPIs(year,month,m,weeks){
       <td class="c" style="font-family:var(--mono);color:${bl>0?'var(--red)':'var(--text2)'};">${hu(bl)}</td>
       <td class="c"><span class="pill ${pCls(ut)}">${pTxt(ut)}</span></td>
     `;
+  });
+  PGS.filter(g=>!lines.some(l=>l.pg===g.key)).forEach(g=>{
+    const dem=pgMonthDem(m,g.key,weeks),bl=pgBacklogClose(m,weeks,g.key);
+    if(!dem&&!bl)return;
+    tD+=dem;tB+=bl;
+    lb.insertRow().innerHTML=`<td style="color:var(--yellow);">No active line</td>
+      <td>${g.label}</td><td class="c">—</td><td class="c">0</td>
+      <td class="c">${hu(dem)}</td><td class="c">—</td><td class="c">0</td>
+      <td class="c" style="color:var(--red);">${hu(bl)}</td><td class="c"><span class="pill pill-danger">No capacity</span></td>`;
   });
   const ltr=lb.insertRow(); ltr.className='tot';
   ltr.innerHTML=`<td colspan="3">TOTAL</td>
@@ -2246,9 +2331,9 @@ function renderKPIs(year,month,m,weeks){
   PGS.forEach(g=>{
     const pgL=lines.filter(l=>l.pg===g.key);
     const cap=pgL.reduce((s,l)=>s+lMoCap(l,weeks,m),0);
-    const dem=pgDem(m,g.key);
-    if(!pgL.length&&!dem) return; // hide groups with neither lines nor demand
     const open=blOpenEff(m,g.key), close=pgBacklogClose(m,weeks,g.key);
+    const dem=pgMonthDem(m,g.key,weeks);
+    if(!pgL.length&&!dem&&!open&&!close) return;
     const ut=pct(dem,cap);
     pC+=cap; pD+=dem; pO+=open; pB+=close;
     pb.insertRow().innerHTML=`
@@ -2287,10 +2372,10 @@ function renderCharts(){
 
   const activePGs=PGS.filter(g=>{
     const pgLines=lines.filter(l=>l.pg===g.key);
-    return pgLines.length||pgDem(m,g.key)>0||pgBacklogClose(m,weeks,g.key)>0;
+    return pgLines.length||pgMonthDem(m,g.key,weeks)>0||pgBacklogClose(m,weeks,g.key)>0;
   });
   const pgCaps=activePGs.map(g=>lines.filter(l=>l.pg===g.key).reduce((s,l)=>s+lMoCap(l,weeks,m),0));
-  const pgDems=activePGs.map(g=>pgDem(m,g.key));
+  const pgDems=activePGs.map(g=>pgMonthDem(m,g.key,weeks));
   const pgBacklogs=activePGs.map(g=>pgBacklogClose(m,weeks,g.key));
   destroyChart('pgKpiChart');
   charts['pgKpiChart']=new Chart(document.getElementById('pgKpiChart').getContext('2d'),{type:'bar',
@@ -2303,8 +2388,8 @@ function renderCharts(){
       legend:{display:false},
       tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${hu(c.raw)}`}}
     },scales:{
-      y:{beginAtZero:true,ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'},callback:v=>hu(v)},grid:{color:'rgba(255,255,255,0.04)'}},
-      x:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'},maxRotation:35,minRotation:0},grid:{display:false}}
+      y:{beginAtZero:true,ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'},callback:v=>hu(v)},grid:{color:'rgba(24,40,59,0.10)'}},
+      x:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'},maxRotation:35,minRotation:0},grid:{display:false}}
     }}
   });
 
@@ -2317,9 +2402,9 @@ function renderCharts(){
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{
-        y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
-        y2:{position:'right',min:0,max:120,ticks:{color:'#EF9F27',font:{size:10,family:'IBM Plex Mono'},callback:v=>v+'%'},grid:{display:false}},
-        x:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}
+        y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
+        y2:{position:'right',min:0,max:120,ticks:{color:'#946000',font:{size:10,family:'IBM Plex Mono'},callback:v=>v+'%'},grid:{display:false}},
+        x:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}
       }}
   });
 
@@ -2335,8 +2420,8 @@ function renderCharts(){
       backgroundColor:pgColors.map(c=>c+'99'),borderColor:pgColors,borderWidth:1}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{
-        x:{min:0,max:120,ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'},callback:v=>v+'%'},grid:{color:'rgba(255,255,255,0.04)'}},
-        y:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+        x:{min:0,max:120,ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'},callback:v=>v+'%'},grid:{color:'rgba(24,40,59,0.10)'}},
+        y:{ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
       }}
   });
 }
@@ -2464,7 +2549,7 @@ async function runAI(){
 // ════════════════════════════════
 // CSV EXPORT  (exports the active tab's data for the selected month)
 // ════════════════════════════════
-function csvEscape(v){ v=String(v??''); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function csvEscape(v){ const numeric=typeof v==='number';v=String(v??'');if(!numeric&&/^\s*[=+@-]/.test(v))v="'"+v;return /[";\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
 function downloadCSV(rows,filename){
   const csv='\uFEFF'+rows.map(r=>r.map(csvEscape).join(';')).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
@@ -2493,7 +2578,10 @@ function exportCSV(){
     rows.push(['Labor hrs',K.labor,P.labor]);
     rows.push(['Coverage %',K.coverage??'',P.coverage??'']);
     rows.push(['Closing backlog',K.closing,P.closing]);
-    rows.push(['Adherence %',K.adherence??'',P.adherence??'']);
+    rows.push(['On-time adherence %',K.adherence??'',P.adherence??'']);
+    rows.push(['Dated plan completion %',K.production.completion??'',P.production.completion??'']);
+    rows.push(['Actual production by transaction date',K.production.actual,P.production.actual]);
+    rows.push(['Batches missing due date',K.production.missingDue,P.production.missingDue]);
     rows.push(['MPS spill to next month',K.spill,P.spill]);
     rows.push([]);
   }
@@ -2635,12 +2723,14 @@ function exportCSV(){
 
   else if(activeTab==='mps'){
     rows.push(['MPS BATCH PLAN']);
-    rows.push(['Date','Line','Seq','Job no','SKU','Product group','Planned','Produced','Remaining','Completion %','Actual completion date','Status']);
+    rows.push(['Start date','Due date','Line','Seq','Job no','SKU','Product group','Planned','Produced','Remaining','Completion %','Actual completion date','Last production date','Timing','Status','Manual correction date']);
     mps.filter(r=>mkOfDate(r.date)===m).sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1:((a.seq??1e9)-(b.seq??1e9))).forEach(r=>{
       const s=skuOf(r.sku);
       const produced=r.produced||0;
-      rows.push([r.date,r.line,r.seq??'',r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty,produced||'',Math.max(0,r.qty-produced),r.qty>0?Math.round(produced/r.qty*100):'',r.actualDate||'',r.status||(batchDone(r)?'Completed':'')]);
+      rows.push([r.date,r.dueDate||'',r.line,r.seq??'',r.job||'',r.sku,s&&s.pg?pg(s.pg).label:'',r.qty,r.produced??'',Math.max(0,r.qty-produced),r.qty>0?Math.round(produced/r.qty*100):'',r.actualDate||'',r.lastProductionDate||'',batchTiming(r),r.productionIssue||r.status||(batchDone(r)?'Completed':''),r.manualProduction?.date||'']);
     });
+    rows.push([],['ACTUAL PRODUCTION — BY TRANSACTION DATE'],['Job','Actual date','Units','Matched']);
+    LineSightProduction.facts(mps,productionLedger).filter(v=>v.date&&mkOfDate(v.date)===m).forEach(v=>rows.push([v.job,v.date,v.qty,v.matched?'Yes':'No']));
   }
   else if(activeTab==='scenarios'){
     const cols=scenarioCols();
@@ -2665,7 +2755,7 @@ function exportCSV(){
 function snapshotState(){
   return JSON.parse(JSON.stringify({
     lines:lineBase, lineOvr, pgDemand, weekOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, demandMode, demModeOvr,
-    mpsBasis, mpsSetupDef, rcDeadline,
+    mpsBasis, mpsSetupDef, rcDeadline, productionLedger, productionImportInfo,
     sliders:{
       shifts:  document.getElementById('shifts').value,
       shiftlen:document.getElementById('shiftlen').value,
@@ -2675,6 +2765,7 @@ function snapshotState(){
   }));
 }
 function applyState(s){
+  _calendarMemo={}; _spillMemo.key=null;
   if(s.lines) lineBase=s.lines;
   lineOvr=s.lineOvr||{}; syncLines();
   pgDemand=s.pgDemand||{}; weekOvr=s.weekOvr||{}; blOpen=s.blOpen||{};
@@ -2682,6 +2773,9 @@ function applyState(s){
   workforce=Object.assign({ops:0,contract:40,absence:8},s.workforce);
   wfOvr=s.wfOvr||{};
   skus=s.skus||[]; mps=s.mps||[]; lineAlias=s.lineAlias||{};
+  productionLedger=s.productionLedger||LineSightProduction.migrate(mps);
+  productionImportInfo=s.productionImportInfo||null;
+  reconcileProduction();
   demandMode=s.demandMode||'pg';
   demModeOvr=s.demModeOvr||{};
   mpsBasis=s.mpsBasis||'units';
@@ -2744,7 +2838,7 @@ function renderScenarios(){
   const list=document.getElementById('sc-list');
   list.innerHTML=scenarios.length?scenarios.map((s,i)=>`
     <div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid var(--border);">
-      <span style="font-size:12px;flex:1;">${s.name}</span>
+      <span style="font-size:12px;flex:1;">${esc(s.name)}</span>
       <span style="font-family:var(--mono);font-size:10px;color:var(--text2);">${new Date(s.ts).toLocaleDateString('en-GB')}</span>
       <button class="del-btn" style="color:var(--text2);" title="Load — replaces the current plan" onclick="loadScenario(${i})">↩</button>
       <button class="del-btn" style="color:var(--text2);" title="Overwrite with the current plan" onclick="updScenario(${i})">⟳</button>
@@ -2785,8 +2879,8 @@ function renderScenarios(){
       {label:'Demand',  data:cols.map(c=>c.metrics.dem),backgroundColor:'rgba(55,138,221,0.4)',borderColor:'#378ADD',borderWidth:1},
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{ticks:{color:'#7a8299',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(255,255,255,0.04)'}},
-              x:{ticks:{color:'#7a8299',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}}}
+      scales:{y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
+              x:{ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}}}
   });
 }
 
@@ -2796,48 +2890,53 @@ function renderScenarios(){
 const mkOfDate=ds=>{const [y,mo]=ds.split('-').map(Number); return `${y}-${mo-1}`;};
 const skuOf=c=>skus.find(s=>s.code===c);
 // A batch counts as completed when its status says so, or it has produced its planned quantity
-const batchDone=r=>/complet|done|finish|closed|k[eé]sz|klaar|gereed/i.test(r.status||'')||(r.produced>0&&r.produced>=r.qty);
+const batchDone=r=>!r.productionIssue&&(r.produced!==undefined
+  ?r.qty>0&&r.produced>=r.qty
+  :/^(completed?|done|finished|closed|k[eé]sz|klaar|gereed)$/i.test(String(r.status||'').trim()));
 // ── Basis-aware load/capacity (shared by the grid, weekly summary and auto-place) ──
 const mpsIsMin=()=>mpsBasis==='min'||mpsBasis==='runtime';
-const mpsStdMin=(sku,line)=>{ const s=skuOf(sku); if(s&&s.stdMin>0) return s.stdMin; const l=lines.find(x=>x.name===line); return l&&l.cap>0?60/l.cap:0; };
+const mpsStdMin=(sku,line,m=mk(curDate))=>{ const s=skuOf(sku); if(s&&s.stdMin>0) return s.stdMin; const l=linesFor(m).find(x=>x.name===line); return l&&l.cap>0?60/l.cap:0; };
 const mpsSetup=r=>(r.setup>0?r.setup:mpsSetupDef)||0;
 function mpsBatchLoad(r){
-  if(mpsBasis==='runtime') return r.runMin>0?r.runMin:(r.qty*mpsStdMin(r.sku,r.line)+mpsSetup(r));
-  if(mpsBasis==='min')     return r.qty*mpsStdMin(r.sku,r.line)+mpsSetup(r);
+  if(mpsBasis==='runtime') return r.runMin>0?r.runMin:(r.qty*mpsStdMin(r.sku,r.line,mkOfDate(r.date))+mpsSetup(r));
+  if(mpsBasis==='min')     return r.qty*mpsStdMin(r.sku,r.line,mkOfDate(r.date))+mpsSetup(r);
   return r.qty;
 }
-function mpsDayCap(l){
-  const p=getP(), base=Math.round(p.oee*100);
-  return LineSightCalc.dailyCapacity({
-    rate:l.cap,
-    oee:(l.oee??base)/100,
-    shiftLength:p.shiftlen,
-    activeShifts:nActiveShifts(l),
-    basis:mpsIsMin()?'minutes':'units',
+function mpsCapacityCalendar(line,m){
+  const [y,mo]=m.split('-').map(Number),calendar=workingCalendar(m),out={};
+  weeksOf(y,mo).forEach((w,wi)=>{
+    const dates=weekDates(w,m).sort((a,b)=>a-b);
+    const weights=dates.map(d=>calendar[d.getDate()].weight);
+    const p=getP();
+    const total=mpsIsMin()
+      ?Math.round(60*weekLineOEE(line,m,wi)*p.shiftlen*nActiveShifts(line)*effDays(w,m,wi))
+      :lWkCap(line,w,m,wi);
+    const values=LineSightCalc.distributeTotal(total,weights);
+    dates.forEach((d,i)=>{out[d.getDate()]=values[i];});
   });
+  return out;
 }
 // ── Cross-month spill: units of scheduled batches that cannot be produced within month m, per product group ──
 // (the month-end carry that never clears becomes the next month's backlog)
 function mpsMonthShortfall(m){
   const [y,mo]=m.split('-').map(Number);
   const days=new Date(y,mo+1,0).getDate();
-  const isWork=d=>{const dt=new Date(y,mo,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
   const out={};
-  linesFor(m).forEach(l=>{
-    const rows=mps.filter(r=>!r.unalloc&&r.line===l.name&&mkOfDate(r.date)===m);
-    if(!rows.length) return;
-    const cap=mpsDayCap(l);
-    const loadByDay={}; rows.forEach(r=>{ const d=+r.date.split('-')[2]; loadByDay[d]=(loadByDay[d]||0)+mpsBatchLoad(r); });
-    const carry=LineSightCalc.monthEndCarry({daysInMonth:days,loadsByDay:loadByDay,dayCapacity:cap,isWorkingDay:isWork});
-    if(carry<=0) return; // everything fits this month
-    const totLoad=Object.values(loadByDay).reduce((s,v)=>s+v,0);
-    const shortUnits=LineSightCalc.basisShortfallToUnits({
-      carry,totalLoad:totLoad,totalUnits:rows.reduce((s,r)=>s+r.qty,0)
+  const byLine={};
+  mps.filter(r=>!r.unalloc&&mkOfDate(r.date)===m).forEach(r=>{(byLine[r.line]??=[]).push(r);});
+  Object.entries(byLine).forEach(([name,rows])=>{
+    const line=linesFor(m).find(l=>l.name===name),capacity=line?mpsCapacityCalendar(line,m):{};
+    const queue=[];
+    rows.sort((a,b)=>a.date.localeCompare(b.date)||(a.seq??1e9)-(b.seq??1e9));
+    for(let d=1;d<=days;d++){
+      rows.filter(r=>+r.date.split('-')[2]===d).forEach(r=>{const load=mpsBatchLoad(r);queue.push({r,load,remaining:load});});
+      let available=capacity[d]||0;
+      for(const item of queue){const used=Math.min(item.remaining,available);item.remaining-=used;available-=used;if(available<=0)break;}
+    }
+    queue.forEach(({r,load,remaining})=>{
+      const key=skuOf(r.sku)?.pg;
+      if(key&&(remaining>0||!line||load<=0)) out[key]=(out[key]||0)+(load>0?Math.round(r.qty*remaining/load):r.qty);
     });
-    const pgUnits={}; rows.forEach(r=>{ const sk=skuOf(r.sku); if(sk&&sk.pg) pgUnits[sk.pg]=(pgUnits[sk.pg]||0)+r.qty; });
-    const pgTot=Object.values(pgUnits).reduce((s,v)=>s+v,0);
-    if(pgTot<=0) return; // unassigned SKUs — cannot attribute to a product group
-    Object.entries(LineSightCalc.allocateUnitsByGroup(shortUnits,pgUnits)).forEach(([k,u])=>{ out[k]=(out[k]||0)+u; });
   });
   return out;
 }
@@ -2854,7 +2953,7 @@ function mpsSpillInto(m){
 function blOpenEff(m,k){ return getBLO(m,k)+(mpsSpillInto(m)[k]||0); }
 function normLine(v){
   const raw=String(v||'').trim();
-  if(lineAlias[raw]) return lineAlias[raw];
+  if(Object.hasOwn(lineAlias,raw)&&typeof lineAlias[raw]==='string') return lineAlias[raw];
   const t=raw.toLowerCase().replace(/\s+/g,'');
   const hit=lines.find(l=>l.name.toLowerCase().replace(/\s+/g,'')===t);
   return hit?hit.name:null;
@@ -2880,10 +2979,11 @@ function parseAnyDate(v){
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
   }
   const s=String(v||'').trim();
+  if(typeof v!=='number'&&/^\d{5}(\.\d+)?$/.test(s)&&+s>25000&&+s<80000)return parseAnyDate(Number(s));
   let m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
-  if(m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
+  if(m){const date=`${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;return LineSightProduction.validDate(date)?date:null;}
   m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); // dd/mm/yyyy (EU)
-  if(m) return `${m[3]}-${String(+m[2]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;
+  if(m){const date=`${m[3]}-${String(+m[2]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;return LineSightProduction.validDate(date)?date:null;}
   return null;
 }
 
@@ -2910,7 +3010,8 @@ function completionFile(file){
         line:find([/^line$/i,/production.?line/i]),
         shift:find([/^shift$/i]),
         user:find([/^user$/i,/operator/i]),
-        lot:find([/^lot$/i,/batch/i])
+        lot:find([/^lot$/i,/batch/i]),
+        id:find([/^completion[ _-]?id$/i,/^transaction[ _-]?id$/i,/^internal[ _-]?id$/i])
       };
       if(ci.job<0||ci.date<0||ci.qty<0){
         const missing=[ci.job<0?'Job':'',ci.date<0?'Transaction Date':'',ci.qty<0?'Completed Qty':''].filter(Boolean);
@@ -2918,69 +3019,107 @@ function completionFile(file){
       }
       const normalized=[], skipped=[];
       raw.slice(1).forEach((r,ri)=>{
-        const job=String(r[ci.job]??'').trim();
+        let job=String(r[ci.job]??'').trim();
         const date=parseAnyDate(r[ci.date]);
-        const qty=parseQty(r[ci.qty]);
-        if(!job||job==='-'){ skipped.push(`Row ${ri+2}: no Job`); return; }
+        const qty=LineSightProduction.parseQuantity(r[ci.qty]);
+        if(!job||job==='-')job='[No Job: '+String(ci.item>=0?r[ci.item]:'unknown item').trim()+']';
         if(!date){ skipped.push(`Row ${ri+2}: invalid date`); return; }
-        if(qty<=0){ skipped.push(`Row ${ri+2}: invalid completed quantity`); return; }
-        normalized.push({job,date,qty});
+        if(qty===null||qty<0){ skipped.push(`Row ${ri+2}: invalid completed quantity`); return; }
+        normalized.push({job,date,qty,id:ci.id>=0?String(r[ci.id]??'').trim():''});
       });
-      completionPending=LineSightCalc.aggregateCompletions(normalized);
-      const jobs=[...new Set(completionPending.map(a=>a.job))];
-      const total=completionPending.reduce((s,a)=>s+a.qty,0);
-      el.innerHTML=`
-        <div style="font-size:11px;color:var(--text2);line-height:1.6;">
-          <strong style="color:var(--text);">${raw.length-1}</strong> source rows →
-          <strong style="color:var(--text);">${completionPending.length}</strong> Job/date totals ·
-          <strong style="color:var(--text);">${jobs.length}</strong> jobs ·
-          <strong style="color:var(--blue-l);">${hu(total)}</strong> completed units
-          ${skipped.length?` · <span style="color:var(--yellow);">${skipped.length} rows skipped</span>`:''}
-        </div>
-        ${skipped.slice(0,3).map(s=>`<div style="font-size:10px;color:var(--yellow);">${s}</div>`).join('')}
-        <div style="display:flex;gap:8px;margin-top:8px;">
-          <button class="add-btn" style="margin-top:0;border-color:var(--green);color:var(--green);" onclick="completionApply()">✓ Apply completion data</button>
-          <button class="add-btn" style="margin-top:0;" onclick="completionPending=null;document.getElementById('completion-preview').innerHTML=''">Cancel</button>
-        </div>`;
+      completionPending={rows:normalized,source:file.name,skipped};
+      document.getElementById('completion-corrections').checked=false;
+      completionPreview();
     }catch(err){
       completionPending=null;
-      el.innerHTML=`<div style="font-size:11px;color:var(--red);">Could not read completion data — ${err.message}</div>`;
+      el.textContent='Could not read completion data — '+err.message;
     }
   };
   reader.readAsArrayBuffer(file);
 }
+function completionProposal(){
+  const mode=document.getElementById('completion-mode').value||'snapshot';
+  const result=LineSightProduction.merge(productionLedger,completionPending?.rows||[],{mode,source:completionPending?.source});
+  const affected=new Set(result.affected);
+  mps.filter(r=>r.manualProduction&&affected.has(String(r.job||'').trim())).forEach(r=>result.warnings.push('Job '+r.job+': replaces a manual correction.'));
+  if(completionPending?.skipped?.length)result.errors.push('Fix the skipped rows before importing a complete daily total. '+completionPending.skipped.join(' '));
+  if(!completionPending?.rows?.length)result.errors.push('No valid completion rows.');
+  result.blocked=result.errors.length>0||(result.warnings.length>0&&!document.getElementById('completion-corrections').checked);
+  return result;
+}
+function completionPreview(){
+  if(!completionPending)return;
+  const result=completionProposal(),jobs=new Set(completionPending.rows.map(r=>r.job));
+  document.getElementById('completion-preview').innerHTML=`
+    <div class="info-text">${completionPending.rows.length} source rows · ${jobs.size} jobs · ${hu(completionPending.rows.reduce((s,r)=>s+r.qty,0))} units in this file</div>
+    ${result.errors.map(e=>`<p style="color:var(--red);font-size:11px;">${esc(e)}</p>`).join('')}
+    ${result.warnings.map(e=>`<p style="color:var(--yellow);font-size:11px;">${esc(e)}</p>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button class="add-btn" style="margin-top:0;" ${result.blocked?'disabled':''} onclick="completionApply()">Apply completion data</button>
+      <button class="add-btn" style="margin-top:0;" onclick="completionPending=null;document.getElementById('completion-preview').textContent=''">Cancel</button>
+    </div>`;
+}
 function recomputeBatchCompletion(r){
-  const vals=Object.values(r.completionByDate||{});
-  if(!vals.length) return;
-  r.produced=vals.reduce((s,v)=>s+(+v.qty||0),0);
-  r.actualDate=vals.map(v=>v.date).sort().pop()||'';
-  r.status=r.produced>=r.qty?'Completed':'In progress';
+  if(r.productionIssue)return;
+  const summary=LineSightProduction.summarize(r,productionLedger);
+  if(!summary.known)return;
+  r.produced=summary.produced;r.actualDate=summary.actualDate;r.lastProductionDate=summary.lastProductionDate;r.status=summary.status;
+}
+function reconcileProduction(){
+  const counts=LineSightProduction.matchCounts(mps);
+  mps.forEach(r=>{
+    const job=String(r.job||'').trim();
+    r.productionIssue=job&&counts.get(job)>1?'Duplicate Job no. — actuals are not allocated to multiple batches':'';
+    recomputeBatchCompletion(r);
+  });
 }
 function completionApply(){
-  if(!completionPending) return;
-  let matched=0, ambiguous=0;
-  const unmatched=new Set(), touched=new Set();
-  completionPending.forEach(c=>{
-    const hits=mps.filter(r=>String(r.job||'').trim()===c.job);
-    if(hits.length!==1){
-      if(hits.length>1) ambiguous++; else unmatched.add(c.job);
-      return;
-    }
-    const r=hits[0];
-    if(!r.completionByDate) r.completionByDate={};
-    r.completionByDate[c.date]=c;
-    touched.add(r);
-    matched++;
-  });
-  touched.forEach(recomputeBatchCompletion);
-  const total=touched.size;
-  const unmatchedJobs=[...unmatched];
-  completionPending=null;
-  document.getElementById('completion-preview').innerHTML=`
-    <div style="font-size:11px;color:var(--green);">✓ ${matched} Job/date totals applied to ${total} MPS batches.</div>
-    ${unmatchedJobs.length?`<div style="font-size:10px;color:var(--yellow);margin-top:4px;">${unmatchedJobs.length} unmatched Job no.: ${unmatchedJobs.slice(0,8).join(', ')}${unmatchedJobs.length>8?'…':''}</div>`:''}
-    ${ambiguous?`<div style="font-size:10px;color:var(--red);margin-top:4px;">${ambiguous} Job/date totals were not applied because the Job no. occurs more than once in the MPS.</div>`:''}`;
+  if(!completionPending)return;
+  const result=completionProposal();
+  if(result.blocked){completionPreview();return;}
+  productionLedger=result.ledger;
+  const affected=new Set(result.affected);
+  mps.filter(r=>affected.has(String(r.job||'').trim())).forEach(r=>{delete r.manualProduction;});
+  productionImportInfo={at:new Date().toISOString(),source:completionPending.source,rows:completionPending.rows.length};
+  completionPending=null;reconcileProduction();
+  document.getElementById('completion-preview').textContent='✓ Completion data saved, including unmatched jobs.';
+  document.getElementById('completion-corrections').checked=false;
   render();
+}
+function productionMonth(d=curDate){
+  const start=dk(new Date(d.getFullYear(),d.getMonth(),1)),end=dk(new Date(d.getFullYear(),d.getMonth()+1,0));
+  return LineSightProduction.metrics(mps,productionLedger,{start,end,asOf:dk(new Date())});
+}
+function productionTiles(v){return `
+  <div class="metric"><div class="metric-label">Actual production</div><div class="metric-val">${hu(v.actual)}</div><div class="metric-sub">units by actual date, incl. unmatched jobs</div></div>
+  <div class="metric"><div class="metric-label">Plan completion</div><div class="metric-val">${v.completion===null?'—':v.completion+'%'}</div><div class="metric-sub">${hu(v.produced)} / ${hu(v.planned)} dated units through ${esc(v.cutoff)}</div></div>
+  <div class="metric"><div class="metric-label">Data to complete</div><div class="metric-val ${v.missingDue||v.undated?'warn':''}">${v.missingDue} / ${hu(v.undated)}</div><div class="metric-sub">batches without due date / undated actual units</div></div>`;}
+function renderProductionIssues(){
+  const counts=LineSightProduction.matchCounts(mps);
+  const unmatched=Object.values(productionLedger).filter(v=>counts.get(v.job)!==1);
+  const el=document.getElementById('completion-unmatched');
+  el.innerHTML=`<p class="info-text">${productionImportInfo?'Last import: '+esc(new Date(productionImportInfo.at).toLocaleString('en-GB'))+' · '+esc(productionImportInfo.source):'No new production import yet.'}</p>`
+    +(unmatched.length?`<details open><summary style="color:var(--yellow);font-size:11px;">${unmatched.length} retained Job/day totals need matching</summary><div style="max-height:200px;overflow:auto;"><table class="gt"><tr><th>Job</th><th>Actual date</th><th>Units</th><th>Reason</th></tr>${unmatched.map(v=>`<tr><td>${esc(v.job)}</td><td>${esc(v.date)}</td><td>${hu(v.qty)}</td><td>${counts.get(v.job)>1?'Duplicate Job in MPS':'Job not in MPS yet'}</td></tr>`).join('')}</table></div></details>`:'<p class="info-text">All imported jobs are linked to one MPS batch.</p>');
+}
+function renderProductionDaily(){
+  const m=mk(curDate),cutoff=productionMonth().cutoff,days=new Map();
+  LineSightProduction.facts(mps,productionLedger).filter(v=>v.date&&mkOfDate(v.date)===m&&v.date<=cutoff).forEach(v=>{
+    if(!days.has(v.date))days.set(v.date,{matched:0,unmatched:0});
+    days.get(v.date)[v.matched?'matched':'unmatched']+=v.qty;
+  });
+  const rows=[...days].sort(([a],[b])=>a.localeCompare(b));
+  document.getElementById('production-daily-table').innerHTML='<thead><tr><th>Actual date</th><th>Matched units</th><th>Unmatched units</th><th>Total net units</th></tr></thead><tbody>'
+    +rows.map(([date,v])=>`<tr><td>${esc(date)}</td><td>${hu(v.matched)}</td><td style="color:var(--yellow);">${hu(v.unmatched)}</td><td>${hu(v.matched+v.unmatched)}</td></tr>`).join('')
+    +(rows.length?'':'<tr><td colspan="4">No dated actual production in this month yet.</td></tr>')+'</tbody>';
+}
+function exportProductionLog(){
+  const rows=[['Job','Actual production date','Quantity','Matched to MPS']];
+  LineSightProduction.facts(mps,productionLedger).forEach(v=>rows.push([v.job,v.date||'',v.qty,v.matched?'Yes':'No']));
+  downloadCSV(rows,'linesight_production_actuals.csv');
+}
+function exportProductionBackup(){
+  const blob=new Blob([JSON.stringify({productionLedger,productionImportInfo,manualCorrections:mps.filter(r=>r.manualProduction).map(r=>({job:r.job,manualProduction:r.manualProduction,productionBaseline:r.productionBaseline}))},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='linesight_production_backup.json';a.click();URL.revokeObjectURL(a.href);
 }
 
 let mpsRaw=null, mpsPending=null;
@@ -2995,7 +3134,7 @@ function mpsFile(file){
       if(mpsRaw.length<2){ document.getElementById('mps-map').innerHTML='<div style="font-size:11px;color:var(--red);">The sheet looks empty.</div>'; return; }
       mpsShowMapping();
     }catch(err){
-      document.getElementById('mps-map').innerHTML=`<div style="font-size:11px;color:var(--red);">Could not read the file — ${err.message}</div>`;
+      document.getElementById('mps-map').innerHTML=`<div style="font-size:11px;color:var(--red);">Could not read the file — ${esc(err.message)}</div>`;
     }
   };
   reader.readAsArrayBuffer(file);
@@ -3004,7 +3143,9 @@ function mpsShowMapping(){
   const head=mpsRaw[0].map((h,i)=>String(h).trim()||('Column '+(i+1)));
   const guess=pats=>head.findIndex(h=>pats.some(p=>p.test(h)));
   const g={
-    date:guess([/date|datum|day|nap/i]),
+    date:guess([/^(start.?date|planned.?date|date|datum|day|nap)$/i]),
+    due:guess([/due.?date|end.?date|planned.?completion|finish.?date/i]),
+    actual:guess([/actual.?completion.?date|last.?production.?date|actual.?date/i]),
     line:guess([/line|vonal|lijn/i]),
     sku: guess([/sku|item|product(?!_?fam)|artikel|cikk|material/i]),
     qty: guess([/qty|quant|menny|volume|amount|aantal|pcs|db|cases/i]),
@@ -3019,10 +3160,12 @@ function mpsShowMapping(){
     status:guess([/status|state|statusz|allapot/i]),
     seq: guess([/seq|sequence|sorrend|volgorde/i]),
   };
-  const sel=(id,gi,none)=>`<select id="mm-${id}" class="si" style="width:100%;">${none?`<option value="-1"${gi<0?' selected':''}>— none</option>`:''}${head.map((h,i)=>`<option value="${i}"${i===gi?' selected':''}>${h}</option>`).join('')}</select>`;
+  if(g.date<0)g.date=guess([/date|datum|day|nap/i]);
+  const sel=(id,gi,none)=>`<select id="mm-${id}" class="si" style="width:100%;">${none?`<option value="-1"${gi<0?' selected':''}>— none</option>`:''}${head.map((h,i)=>`<option value="${i}"${i===gi?' selected':''}>${esc(h)}</option>`).join('')}</select>`;
   document.getElementById('mps-map').innerHTML=`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;">
       <div><div style="color:var(--text2);margin-bottom:3px;">Date column</div>${sel('date',g.date)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Due / planned end date (optional)</div>${sel('due',g.due,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Line column</div>${sel('line',g.line)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">SKU column</div>${sel('sku',g.sku)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Quantity column</div>${sel('qty',g.qty)}</div>
@@ -3034,6 +3177,7 @@ function mpsShowMapping(){
       <div><div style="color:var(--text2);margin-bottom:3px;">Batch run time, min (optional)</div>${sel('hcmin',g.hcmin,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Batch run time, hrs (optional)</div>${sel('hchr',g.hchr,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Produced qty (optional)</div>${sel('prod',g.prod,true)}</div>
+      <div><div style="color:var(--text2);margin-bottom:3px;">Actual production date (optional)</div>${sel('actual',g.actual,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Status (optional)</div>${sel('status',g.status,true)}</div>
       <div><div style="color:var(--text2);margin-bottom:3px;">Sequence no. (optional)</div>${sel('seq',g.seq,true)}</div>
     </div>
@@ -3044,7 +3188,7 @@ function mpsShowMapping(){
 let mpsCtx=null, mpsUnknown=[];
 let mpsFltLine='', mpsFltPg='', mpsFltDate=''; // batch-table filters (not persisted)
 function mpsConvert(ci){
-  const out=[], errs=[], unknown={}, skuInfo={};
+  const out=[], errs=[], unknown=Object.create(null), skuInfo=Object.create(null);
   mpsRaw.slice(1).forEach((r,ri)=>{
     const date=parseAnyDate(r[ci.date]);
     const rawLine=String(r[ci.line]||'').trim();
@@ -3069,10 +3213,12 @@ function mpsConvert(ci){
     if(ci.hcmin>=0) runMin=parseFloat(String(r[ci.hcmin]).replace(',','.'))||0;
     if(!runMin&&ci.hchr>=0) runMin=(parseFloat(String(r[ci.hchr]).replace(',','.'))||0)*60;
     const row={date,line,sku:skuC,qty,job};
+    if(ci.due>=0&&r[ci.due]){const due=parseAnyDate(r[ci.due]);if(!due){errs.push(`Row ${ri+2}: invalid due date`);return;}row.dueDate=due;}
     if(setup>0) row.setup=setup;
     if(runMin>0) row.runMin=Math.round(runMin*100)/100;
     // adherence: produced quantity and status text
     if(ci.prod>=0){ const pv=parseQty(r[ci.prod]); if(pv>0) row.produced=pv; }
+    if(ci.actual>=0&&r[ci.actual]){const actual=parseAnyDate(r[ci.actual]);if(actual)row.actualDate=actual;else{errs.push(`Row ${ri+2}: invalid actual date`);return;}}
     if(ci.status>=0){ const st=String(r[ci.status]??'').trim(); if(st) row.status=st; }
     if(ci.seq>=0){ const sv=parseFloat(String(r[ci.seq]).replace(',','.')); if(sv>0) row.seq=sv; }
     out.push(row);
@@ -3081,12 +3227,12 @@ function mpsConvert(ci){
 }
 function mpsParse(){
   const col=id=>+document.getElementById('mm-'+id).value;
-  mpsCtx={date:col('date'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup'),hcmin:col('hcmin'),hchr:col('hchr'),prod:col('prod'),status:col('status'),seq:col('seq')};
+  mpsCtx={date:col('date'),due:col('due'),actual:col('actual'),line:col('line'),sku:col('sku'),qty:col('qty'),fam:col('fam'),desc:col('desc'),job:col('job'),std:col('std'),setup:col('setup'),hcmin:col('hcmin'),hchr:col('hchr'),prod:col('prod'),status:col('status'),seq:col('seq')};
   const res=mpsConvert(mpsCtx);
   const el=document.getElementById('mps-preview');
   mpsUnknown=Object.keys(res.unknown);
   if(!res.out.length&&!mpsUnknown.length){
-    el.innerHTML=`<div style="font-size:11px;color:var(--red);">No valid rows. ${res.errs[0]||''}</div>`;
+    el.innerHTML=`<div style="font-size:11px;color:var(--red);">No valid rows. ${esc(res.errs[0]||'')}</div>`;
     mpsCtx=null; return;
   }
   const months=[...new Set(res.out.map(o=>mkOfDate(o.date)))];
@@ -3097,10 +3243,10 @@ function mpsParse(){
       <div style="font-size:11px;color:var(--yellow);margin-bottom:6px;">Unknown line names — map them to your lines (remembered for future imports):</div>
       ${mpsUnknown.map((n2,i)=>`
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-          <span style="font-family:var(--mono);font-size:11px;flex:1;">${n2} <span style="color:var(--text2);">(${res.unknown[n2]} rows)</span></span>
+          <span style="font-family:var(--mono);font-size:11px;flex:1;">${esc(n2)} <span style="color:var(--text2);">(${res.unknown[n2]} rows)</span></span>
           <select id="la-${i}" class="si" style="width:110px;">
             <option value="">— skip</option>
-            ${lines.map(l=>`<option value="${l.name}">${l.name}</option>`).join('')}
+            ${lines.map(l=>`<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('')}
           </select>
         </div>`).join('')}
     </div>`:'';
@@ -3111,7 +3257,7 @@ function mpsParse(){
       ${res.errs.length?` · <span style="color:var(--yellow);">${res.errs.length} rows skipped</span>`:''}
     </div>
     ${aliasUI}
-    ${res.errs.slice(0,3).map(e=>`<div style="font-size:10px;color:var(--yellow);">${e}</div>`).join('')}
+    ${res.errs.slice(0,3).map(e=>`<div style="font-size:10px;color:var(--yellow);">${esc(e)}</div>`).join('')}
     <div style="display:flex;gap:8px;">
       <button class="add-btn" style="border-color:var(--green);color:var(--green);" onclick="mpsApply()">✓ Apply import</button>
       <button class="add-btn" onclick="mpsCtx=null;document.getElementById('mps-preview').innerHTML='';document.getElementById('mps-map').innerHTML=''">Cancel</button>
@@ -3138,9 +3284,9 @@ function mpsApply(){
   });
   res.out.forEach(r=>{
     const old=oldByJob.get(String(r.job||'').trim());
-    if(old&&old.length===1&&old[0].completionByDate){
-      r.completionByDate=JSON.parse(JSON.stringify(old[0].completionByDate));
-      recomputeBatchCompletion(r);
+    if(old&&old.length===1){
+      ['completionByDate','manualProduction','productionBaseline'].forEach(k=>{if(old[0][k])r[k]=JSON.parse(JSON.stringify(old[0][k]));});
+      if(!r.dueDate&&old[0].dueDate)r.dueDate=old[0].dueDate;
     }
   });
   mps=mps.filter(r=>!months.has(mkOfDate(r.date))).concat(res.out);
@@ -3214,16 +3360,16 @@ function autoPlace(){
   const parked=mps.filter(r=>r.unalloc&&mkOfDate(r.date)===m);
   if(!parked.length){ alert('No un-allocated batches in this month to place.'); return; }
   if(!confirm(`Auto-place ${parked.length} un-allocated batch(es) onto their line's earliest free capacity?`)) return;
-  const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
+  const calendar=workingCalendar(m),isWork=d=>(calendar[d]?.weight||0)>0;
   const dayStr=d=>`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
   let placed=0, noShift=0, noFit=0;
   const byLine={}; parked.forEach(r=>{ (byLine[r.line]??=[]).push(r); });
   Object.entries(byLine).forEach(([lineName,batches])=>{
     const l=lines.find(x=>x.name===lineName);
-    const cap=l?mpsDayCap(l):0;
-    if(!l||cap<=0){ noShift+=batches.length; return; } // no running capacity — leave parked
+    const capacity=l?mpsCapacityCalendar(l,m):{};
+    if(!l||!Object.values(capacity).some(c=>c>0)){ noShift+=batches.length; return; }
     // remaining capacity per working day = day cap minus what committed batches already use (spill-aware)
-    const remaining={}; for(let d=1;d<=days;d++) remaining[d]=isWork(d)?cap:0;
+    const remaining={}; for(let d=1;d<=days;d++) remaining[d]=capacity[d]||0;
     const committed={};
     mps.filter(r=>!r.unalloc&&r.line===lineName&&mkOfDate(r.date)===m).forEach(r=>{ const d=+r.date.split('-')[2]; committed[d]=(committed[d]||0)+mpsBatchLoad(r); });
     let carry=0; for(let d=1;d<=days;d++){ carry+=committed[d]||0; const use=Math.min(remaining[d],carry); remaining[d]-=use; carry-=use; }
@@ -3298,11 +3444,28 @@ function autoPlace(){
   tray.addEventListener('dragend',()=>{ src=null; tray.classList.remove('tray-over'); });
 })();
 function setBatchDate(i,v){ if(v) mps[i].date=v; mpsResort(); render(); }
+function setBatchDue(i,v){if(v&&!LineSightProduction.validDate(v))return;mps[i].dueDate=v||'';render();}
 function setBatchLine(i,v){ mps[i].line=v; render(); }
 function setProduced(i,v){
-  delete mps[i].completionByDate; delete mps[i].actualDate;
-  if(v===''||+v<=0) delete mps[i].produced; else mps[i].produced=+v;
+  const r=mps[i];
+  if(!r.productionBaseline&&!r.manualProduction)r.productionBaseline={qty:r.produced||0,date:r.lastProductionDate||r.actualDate||null};
+  r.manualProduction={qty:Math.max(0,+v||0),date:r.manualProduction?.date||r.lastProductionDate||r.actualDate||null};
+  recomputeBatchCompletion(r);
   render();
+}
+function setManualProductionDate(i,date){
+  const r=mps[i];if(!r.manualProduction)return;
+  r.manualProduction.date=LineSightProduction.validDate(date)?date:null;
+  recomputeBatchCompletion(r);render();
+}
+function useImportedProduction(i){
+  delete mps[i].manualProduction;recomputeBatchCompletion(mps[i]);render();
+}
+function batchTiming(r){
+  if(r.productionIssue)return 'Review Job';
+  if(!LineSightProduction.validDate(r.dueDate))return 'Due date needed';
+  if(batchDone(r))return !r.actualDate?'Actual date needed':r.actualDate<r.dueDate?'Early':r.actualDate===r.dueDate?'On time':'Late';
+  return r.dueDate<dk(new Date())?'Overdue':'Not due yet';
 }
 function setSeq(i,v){ if(v===''||+v<=0) delete mps[i].seq; else mps[i].seq=+v; render(); }
 function mpsExport(){
@@ -3310,11 +3473,11 @@ function mpsExport(){
   const rows=mps.filter(r=>mkOfDate(r.date)===m).sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1:((a.seq??1e9)-(b.seq??1e9))).map(r=>{
     const s=skuOf(r.sku);
     const produced=r.produced||0, remaining=Math.max(0,r.qty-produced);
-    return {Date:r.date, Line:r.line, Seq:r.seq??'', 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, Produced:produced||'', Remaining:remaining, 'Completion %':r.qty>0?Math.round(produced/r.qty*100):'', 'Actual completion date':r.actualDate||'', Status:r.status||(batchDone(r)?'Completed':''), 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
+    return {Date:r.date,'Due date':r.dueDate||'', Line:r.line, Seq:r.seq??'', 'Job no':r.job||'', SKU:r.sku, Description:s&&s.name?s.name:'', 'Product group':s&&s.pg?pg(s.pg).label:'', Qty:r.qty, Produced:r.produced??'', Remaining:remaining, 'Completion %':r.qty>0?Math.round(produced/r.qty*100):'', 'Actual completion date':r.actualDate||'', 'Last production date':r.lastProductionDate||'', Timing:batchTiming(r), Status:r.productionIssue||r.status||(batchDone(r)?'Completed':''),'Manual correction':r.manualProduction?'Yes':'No','Correction date':r.manualProduction?.date||'', 'Std min/unit':s&&s.stdMin>0?s.stdMin:'', 'Setup min':r.setup>0?r.setup:'', 'Run min':r.runMin>0?r.runMin:''};
   });
   if(!rows.length){ alert('No batches in the selected month to export.'); return; }
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:8},{wch:6},{wch:12},{wch:16},{wch:36},{wch:14},{wch:10},{wch:10},{wch:10},{wch:12},{wch:16},{wch:12},{wch:12},{wch:10},{wch:10}];
+  ws['!cols']=Object.keys(rows[0]).map(k=>({wch:k==='Description'?36:Math.max(12,k.length+1)}));
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'MPS');
   XLSX.writeFile(wb,`linesight_mps_${curDate.getFullYear()}-${String(curDate.getMonth()+1).padStart(2,'0')}.xlsx`);
@@ -3348,9 +3511,11 @@ function renderMPS(){
   const setupInp=document.getElementById('mps-setup');
   if(document.activeElement!==setupInp) setupInp.value=mpsSetupDef||'';
   // basis-aware load & capacity (shared module helpers, single source of truth)
-  const batchLoad=mpsBatchLoad, dayCap=mpsDayCap;
+  const batchLoad=mpsBatchLoad;
+  const calendar=workingCalendar(m),lineCalendars=Object.fromEntries(lines.map(l=>[l.name,mpsCapacityCalendar(l,m)]));
+  const dayCap=(l,d)=>lineCalendars[l.name]?.[d]||0;
   const fV=minMode?(v=>(Math.round(v/60*10)/10).toLocaleString('en-GB')+' h'):(v=>hu(v)); // basis-aware formatter (hours vs units)
-  const isWork=d=>{const dt=new Date(year,month,d); return dt.getDay()>0&&dt.getDay()<6&&!calEvents[dk(dt)];};
+  const isWork=d=>(calendar[d]?.weight||0)>0;
   const cell={}, cellB={};
   monthRows.forEach(r=>{
     const d=+r.date.split('-')[2];
@@ -3374,11 +3539,10 @@ function renderMPS(){
   // after that day; red only where the carry never returns to zero within the month.
   const spill={}, nClear={};
   lines.forEach(l=>{
-    const cap=dayCap(l);
     let carry=0; const arr=[];
     for(let d=1;d<=days;d++){
       const load=cell[l.name]?.[d]||0;
-      const c=isWork(d)?cap:0;
+      const c=dayCap(l,d);
       const prod=Math.min(c,load+carry);
       arr[d]={load,carryIn:carry,prod,carryOut:load+carry-prod};
       carry=arr[d].carryOut;
@@ -3398,24 +3562,29 @@ function renderMPS(){
   // adherence (plan vs actual) over all this month's batches, scheduled and parked
   const allMonth=monthRows.concat(parkRows);
   const doneRows=allMonth.filter(batchDone);
-  const hasAdh=allMonth.some(r=>r.produced>0||r.status);
+  const production=productionMonth(),hasAdh=production.completion!==null;
   const totPlannedAll=allMonth.reduce((s,r)=>s+r.qty,0);
   const totProduced=allMonth.reduce((s,r)=>s+Math.min(r.produced||0,r.qty||0),0);
-  const adh=LineSightCalc.cappedAdherence(allMonth);
+  const adh=production.completion;
   const adhCls=adh>=95?'ok':adh>=80?'warn':'danger';
   // units of this month's scheduled batches that cannot be produced within the month → next month's backlog
   const shortMap=mpsMonthShortfall(m); const monthSpill=Object.values(shortMap).reduce((s,v)=>s+v,0);
   document.getElementById('mps-strip').innerHTML=`
     <div class="metric"><div class="metric-label">Batches this month</div><div class="metric-val">${monthRows.length}</div><div class="metric-sub">${[...new Set(monthRows.map(r=>r.sku))].length} SKUs${hasAdh?` · ${doneRows.length} done`:''}</div></div>
     <div class="metric"><div class="metric-label">Planned quantity</div><div class="metric-val">${hu(totQty)}</div><div class="metric-sub">units</div></div>
-    <div class="metric"><div class="metric-label">Adherence</div><div class="metric-val ${hasAdh?adhCls:''}">${hasAdh?adh+'%':'—'}</div><div class="metric-sub">${hasAdh?hu(totProduced)+' / '+hu(totPlannedAll)+' produced':'no actuals yet'}</div></div>
+    <div class="metric"><div class="metric-label">Plan completion</div><div class="metric-val ${hasAdh?adhCls:''}">${hasAdh?adh+'%':'—'}</div><div class="metric-sub">dated units through ${esc(production.cutoff)}</div></div>
+    <div class="metric"><div class="metric-label">On-time adherence</div><div class="metric-val">${production.adherence===null?'—':production.adherence+'%'}</div><div class="metric-sub">${production.onTime} / ${production.due} due batches · ${production.missingDue} missing due dates</div></div>
+    <div class="metric"><div class="metric-label">Actual production</div><div class="metric-val">${hu(production.actual)}</div><div class="metric-sub">units by actual date</div></div>
     <div class="metric"><div class="metric-label">Overloaded line-days</div><div class="metric-val ${overDays?'danger':'ok'}">${overDays}</div><div class="metric-sub">spill-over cannot absorb</div></div>
-    <div class="metric"><div class="metric-label">Off-day batches</div><div class="metric-val ${offDays?'warn':'ok'}">${offDays}</div><div class="metric-sub">on weekend / holiday</div></div>
+    <div class="metric"><div class="metric-label">Off-day batches</div><div class="metric-val ${offDays?'warn':'ok'}">${offDays}</div><div class="metric-sub">no planned working time</div></div>
     <div class="metric"><div class="metric-label">Unassigned SKUs</div><div class="metric-val ${unSkus?'warn':'ok'}">${unSkus}</div><div class="metric-sub">no product group</div></div>
     <div class="metric"><div class="metric-label">Un-allocated</div><div class="metric-val ${parkRows.length?'warn':'ok'}">${parkRows.length}</div><div class="metric-sub">${parkRows.length?hu(parkRows.reduce((s,r)=>s+r.qty,0))+' units parked':'all scheduled'}</div></div>
     <div class="metric"><div class="metric-label">Changeovers</div><div class="metric-val ${totalCO?'warn':'ok'}">${totalCO}</div><div class="metric-sub">SKU changes in sequence</div></div>
     <div class="metric"><div class="metric-label">Spill to backlog</div><div class="metric-val ${monthSpill>0?'danger':'ok'}">${hu(monthSpill)}</div><div class="metric-sub">units rolling to next month</div></div>
   `;
+
+  renderProductionIssues();
+  renderProductionDaily();
 
   // ── Daily line×day grid ──
   const g=document.getElementById('mps-grid'); g.innerHTML='';
@@ -3428,20 +3597,20 @@ function renderMPS(){
   }
   const gb=g.createTBody();
   lines.forEach(l=>{
-    const cap=dayCap(l);
-    let html=`<td style="font-family:var(--mono);font-size:12px;">${l.name}</td>`;
+    let html=`<td style="font-family:var(--mono);font-size:12px;">${esc(l.name)}</td>`;
     for(let d=1;d<=days;d++){
+      const cap=dayCap(l,d);
       const a=spill[l.name][d];
       const wk=isWork(d);
       let bg='transparent', col='var(--text2)', txt='';
       if(a.load>0){
         const list=(cellB[l.name]||{})[d]||[];
-        txt=list.map(({gi,r})=>{const done=batchDone(r);const co=coBatches.has(r);return `<div class="mps-chip${done?' mps-done':''}${co?' mps-co':''}" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.seq>0?` (seq ${r.seq})`:''}${r.job?`
-Job no: ${r.job}`:''}${co?`
+        txt=list.map(({gi,r})=>{const done=batchDone(r);const co=coBatches.has(r);return `<div class="mps-chip${done?' mps-done':''}${co?' mps-co':''}" draggable="true" data-gi="${gi}" title="${esc(r.sku)}: ${hu(r.qty)}${r.seq>0?` (seq ${r.seq})`:''}${r.job?`
+Job no: ${esc(r.job)}`:''}${co?`
 ⇄ changeover (SKU change from the previous batch)`:''}${r.produced>0?`
 Produced: ${hu(r.produced)}`:''}${r.status?`
-Status: ${r.status}`:''}${r.actualDate?`
-Actual date: ${r.actualDate}`:''}${r.produced>0?`
+Status: ${esc(r.status)}`:''}${r.actualDate?`
+Actual date: ${esc(r.actualDate)}`:''}${r.produced>0?`
 Remaining: ${hu(Math.max(0,r.qty-r.produced))}`:''}">${done?'✓':''}${hu(r.qty)}</div>`;}).join('');
         if(!wk){ bg='rgba(239,159,39,0.25)'; col='var(--yellow)'; }
         else if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
@@ -3451,11 +3620,11 @@ Remaining: ${hu(Math.max(0,r.qty-r.produced))}`:''}">${done?'✓':''}${hu(r.qty)
         txt='↳'+fV(a.prod);
         if(nClear[l.name][d]){ bg='rgba(226,75,74,0.3)'; col='var(--red)'; }
         else { bg='rgba(55,138,221,0.12)'; col='var(--blue-l)'; }
-      } else if(!wk) bg='rgba(255,255,255,0.02)';
-      const tip=(a.load>0||a.carryIn>0)?` title="${l.name} · day ${d}: load ${fV(a.load)} / cap ${fV(wk?cap:0)}${runBasis?' (actual run time)':minBasis?' (std minutes)':' (units)'}
+      } else if(!wk) bg='var(--bg3)';
+      const tip=(a.load>0||a.carryIn>0)?` title="${esc(l.name)} · day ${d}: load ${fV(a.load)} / cap ${fV(wk?cap:0)}${runBasis?' (actual run time)':minBasis?' (std minutes)':' (units)'}
 carry-in ${fV(a.carryIn)} → produced ${fV(a.prod)} → carry-over ${fV(a.carryOut)}
-${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(r.job?' ['+r.job+']':'')+': '+hu(r.qty)+' u').join('\n')}"`:'';
-      html+=`<td class="c"${tip} data-line="${l.name}" data-day="${d}" style="padding:4px 3px;font-size:11px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
+${esc(monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(r.job?' ['+r.job+']':'')+': '+hu(r.qty)+' u').join('\n'))}"`:'';
+      html+=`<td class="c"${tip} data-line="${esc(l.name)}" data-day="${d}" style="padding:4px 3px;font-size:11px;font-family:var(--mono);background:${bg};color:${col};">${txt}</td>`;
     }
     gb.insertRow().innerHTML=html;
   });
@@ -3466,14 +3635,14 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(
   const whr=wt.createTHead().insertRow();
   ['Line',...wkWeeks.map(w=>w.label),'Month'].forEach((h,i)=>{const th=document.createElement('th');th.textContent=h;th.className=i?'c':'';th.style.whiteSpace='nowrap';whr.appendChild(th);});
   const wtb=wt.createTBody();
-  const weekLoadCap=(l,w)=>{ let load=0,cap=0; for(let dt=new Date(w.start);dt<=w.end;dt.setDate(dt.getDate()+1)){ if(dt.getMonth()!==month) continue; const d=dt.getDate(); load+=cell[l.name]?.[d]||0; if(isWork(d)) cap+=dayCap(l); } return {load,cap}; };
+  const weekLoadCap=(l,w)=>{ let load=0,cap=0; for(const dt of weekDates(w,m)){const d=dt.getDate();load+=cell[l.name]?.[d]||0;cap+=dayCap(l,d);}return {load,cap}; };
   const colLoad=wkWeeks.map(()=>0), colCap=wkWeeks.map(()=>0);
   const utCell=c=>`<td class="c" style="font-family:var(--mono);font-size:11px;color:${c.cap===0?'var(--text2)':tCol(c.ut)};" title="load ${fV(c.load)} / cap ${fV(c.cap)}">${c.cap===0?(c.load>0?'⚠':'—'):c.ut+'%'}</td>`;
   lines.forEach(l=>{
     let moLoad=0,moCap=0;
     const cells=wkWeeks.map((w,wi)=>{ const {load,cap}=weekLoadCap(l,w); colLoad[wi]+=load; colCap[wi]+=cap; moLoad+=load; moCap+=cap; return {ut:cap>0?Math.round(load/cap*100):0,load,cap}; });
     const moUt=moCap>0?Math.round(moLoad/moCap*100):0;
-    wtb.insertRow().innerHTML=`<td style="font-family:var(--mono);font-size:11px;">${l.name}</td>`+cells.map(utCell).join('')+`<td class="c" style="font-family:var(--mono);font-weight:500;color:${moCap===0?'var(--text2)':tCol(moUt)};">${moCap===0?(moLoad>0?'⚠':'—'):moUt+'%'}</td>`;
+    wtb.insertRow().innerHTML=`<td style="font-family:var(--mono);font-size:11px;">${esc(l.name)}</td>`+cells.map(utCell).join('')+`<td class="c" style="font-family:var(--mono);font-weight:500;color:${moCap===0?'var(--text2)':tCol(moUt)};">${moCap===0?(moLoad>0?'⚠':'—'):moUt+'%'}</td>`;
   });
   const totLoad=colLoad.reduce((s,v)=>s+v,0), totCap=colCap.reduce((s,v)=>s+v,0), totUt=totCap>0?Math.round(totLoad/totCap*100):0;
   const wttr=wtb.insertRow(); wttr.className='tot';
@@ -3485,13 +3654,13 @@ ${monthRows.filter(r=>r.line===l.name&&+r.date.split('-')[2]===d).map(r=>r.sku+(
   const tray=document.getElementById('mps-tray-list');
   tray.innerHTML=parkRows.length?parkRows.map(r=>{
     const gi=mps.indexOf(r), s=skuOf(r.sku), c=s&&s.pg?pg(s.pg).color:'var(--text2)';
-    return `<div class="mps-tray-chip" draggable="true" data-gi="${gi}" title="${r.sku}: ${hu(r.qty)}${r.job?`
-Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;height:7px;margin:0;"></span>${r.sku} · ${hu(r.qty)}<button class="tc-x" title="Delete batch" onclick="delBatch(${gi})">✕</button></div>`;
+    return `<div class="mps-tray-chip" draggable="true" data-gi="${gi}" title="${esc(r.sku)}: ${hu(r.qty)}${r.job?`
+Job no: ${esc(r.job)}`:''}"><span class="pg-dot" style="background:${c};width:7px;height:7px;margin:0;"></span>${esc(r.sku)} · ${hu(r.qty)}<button class="tc-x" title="Delete batch" onclick="delBatch(${gi})">✕</button></div>`;
   }).join(''):'<span style="font-size:11px;color:var(--text2);">No un-allocated batches — drag a batch chip from the grid to park it here.</span>';
 
   // ── Batch table (with line/date filters) ──
   const mfLine=document.getElementById('mf-line');
-  mfLine.innerHTML=`<option value="">All lines</option>`+lines.map(l=>`<option value="${l.name}"${l.name===mpsFltLine?' selected':''}>${l.name}</option>`).join('');
+  mfLine.innerHTML=`<option value="">All lines</option>`+lines.map(l=>`<option value="${esc(l.name)}"${l.name===mpsFltLine?' selected':''}>${esc(l.name)}</option>`).join('');
   if(mpsFltLine&&!lines.some(l=>l.name===mpsFltLine)){ mpsFltLine=''; }
   document.getElementById('mf-pg').innerHTML=`<option value="">All groups</option>`
     +PGS.map(g2=>`<option value="${g2.key}"${g2.key===mpsFltPg?' selected':''}>${g2.label}</option>`).join('')
@@ -3508,7 +3677,7 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
   shown=shown.slice().sort((a,b)=> a.date<b.date?-1:a.date>b.date?1: a.line<b.line?-1:a.line>b.line?1: ((a.seq??1e9)-(b.seq??1e9)));
   const bt=document.getElementById('mps-batch-table'); bt.innerHTML='';
   const bh=bt.createTHead().insertRow();
-  ['Date','Line','Seq','Job no.','SKU','Group','Planned','Produced','Remaining','Completion','Actual date','Status',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=(i===2||i>=6)?'c':''; th.style.whiteSpace='nowrap'; bh.appendChild(th);});
+  ['Start date','Due date','Line','Seq','Job no.','SKU','Group','Planned','Produced','Remaining','Completion','Completed on','Timing / status',''].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; th.className=(i===3||i>=7)?'c':''; th.style.whiteSpace='nowrap'; bh.appendChild(th);});
   const bb=bt.createTBody();
   shown.forEach(r=>{
     const gi=mps.indexOf(r);
@@ -3516,35 +3685,37 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
     const done=batchDone(r);
     const produced=r.produced||0, remaining=Math.max(0,r.qty-produced);
     const adhP=r.qty>0&&produced>0?Math.round(produced/r.qty*100):null;
-    const statusCell=done?'<span class="pill pill-ok">✓ done</span>'
-      :adhP!=null?`<span class="pill ${adhP>=80?'pill-warn':'pill-danger'}" title="${r.status||''}">${adhP}%</span>`
-      :`<span style="font-size:10px;color:var(--text2);">${r.status||'—'}</span>`;
+    const statusCell=r.productionIssue?`<span class="pill pill-danger" title="${esc(r.productionIssue)}">Review Job</span>`:done?'<span class="pill pill-ok">✓ done</span>'
+      :adhP!=null?`<span class="pill ${adhP>=80?'pill-warn':'pill-danger'}" title="${esc(r.status||'')}">${adhP}%</span>`
+      :`<span style="font-size:10px;color:var(--text2);">${esc(r.status||'—')}</span>`;
     bb.insertRow().innerHTML=`
-      <td style="width:126px;"><input type="date" class="wni" style="width:118px;font-size:10px;text-align:left;padding:3px 5px;color-scheme:dark;" value="${r.date}" onchange="setBatchDate(${gi},this.value)"></td>
+      <td style="width:126px;"><input type="date" class="wni" style="width:118px;font-size:10px;text-align:left;padding:3px 5px;color-scheme:light;" value="${esc(r.date)}" onchange="setBatchDate(${gi},this.value)"></td>
+      <td><input type="date" class="wni" style="width:118px;font-size:10px;color-scheme:light;" value="${esc(r.dueDate||'')}" title="Planned finish date for on-time adherence (not the batch start date)" onchange="setBatchDue(${gi},this.value)"></td>
       <td style="width:76px;"><select class="si" style="width:68px;${lines.some(l2=>l2.name===r.line)?'':'border-color:var(--yellow);color:var(--yellow);'}" onchange="setBatchLine(${gi},this.value)">${
         // keep a line the month does not run as an option, so the row shows its real line
         (lines.some(l2=>l2.name===r.line)?lines.map(l2=>l2.name):[r.line,...lines.map(l2=>l2.name)])
-          .map(n=>`<option value="${n}"${n===r.line?' selected':''}>${n}${lines.some(l2=>l2.name===n)?'':' (not this month)'}</option>`).join('')
+          .map(n=>`<option value="${esc(n)}"${n===r.line?' selected':''}>${esc(n)}${lines.some(l2=>l2.name===n)?'':' (not this month)'}</option>`).join('')
       }</select></td>
       <td class="c" style="width:44px;"><input data-k="b-${gi}-seq" class="wni" type="text" inputmode="numeric" style="width:38px;${coBatches.has(r)?'border-color:var(--yellow);':''}" value="${r.seq??''}" min="0" placeholder="—" title="Sequence within the day${coBatches.has(r)?' · ⇄ changeover (SKU change)':''}" oninput="setSeq(${gi},this.value)"></td>
-      <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.job||'—'}</td>
-      <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
+      <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${esc(r.job||'—')}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${esc(r.sku)}</td>
       <td>${grp?`<span class="pg-dot" style="background:${grp.color};"></span><span style="font-size:10px;">${grp.label}</span>`:'<span style="font-size:10px;color:var(--yellow);">—</span>'}</td>
       <td class="c" style="width:64px;"><input data-k="b-${gi}-qty" class="wni" type="text" inputmode="numeric" style="width:56px;" value="${r.qty}" min="1" oninput="mps[${gi}].qty=+this.value||0;render()"></td>
-      <td class="c" style="width:64px;"><input data-k="b-${gi}-prod" class="wni" type="text" inputmode="numeric" style="width:56px;" value="${r.produced??''}" min="0" placeholder="—" title="Actual produced quantity" oninput="setProduced(${gi},this.value)"></td>
+      <td class="c" style="min-width:64px;"><input data-k="b-${gi}-prod" class="wni" type="text" inputmode="numeric" style="width:64px;" value="${r.produced??''}" min="0" placeholder="—" ${r.productionIssue?'disabled':''} title="Manual correction of total produced quantity; imported detail is retained" oninput="setProduced(${gi},this.value)">
+        ${r.manualProduction?`<div style="font-size:9px;color:var(--yellow);margin-top:4px;">Manual — correction date</div><input type="date" class="wni" style="width:112px;color-scheme:light;font-size:9px;" value="${esc(r.manualProduction.date||'')}" onchange="setManualProductionDate(${gi},this.value)"><button class="add-btn" style="font-size:9px;margin-top:3px;padding:2px 5px;" onclick="useImportedProduction(${gi})">Use imported actuals</button>`:''}</td>
       <td class="c" style="font-family:var(--mono);font-size:10px;color:${remaining>0?'var(--yellow)':'var(--green)'};">${hu(remaining)}</td>
       <td class="c" style="font-family:var(--mono);font-size:10px;color:${adhP==null?'var(--text2)':adhP>=100?'var(--green)':adhP>=80?'var(--yellow)':'var(--red)'};">${adhP==null?'—':adhP+'%'}</td>
-      <td class="c" style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.actualDate||'—'}</td>
-      <td class="c" style="width:64px;">${statusCell}</td>
+      <td class="c" style="font-family:var(--mono);font-size:10px;color:var(--text2);">${esc(r.actualDate||'—')}</td>
+      <td class="c" style="min-width:100px;">${statusCell}<div style="font-size:9px;color:var(--text2);margin-top:4px;">${esc(batchTiming(r))}</div></td>
       <td class="c"><button class="del-btn" onclick="delBatch(${gi})">✕</button></td>
     `;
   });
-  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="13" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
+  if(!shown.length) bb.insertRow().innerHTML=`<td colspan="14" style="font-size:11px;color:var(--text2);border:none;">${monthRows.length?'No batches match the filter.':'No batches this month — import an Excel or add rows below.'}</td>`;
 
   // ── Add-batch form + SKU master ──
   const mbLine=document.getElementById('mb-line');
-  if(document.activeElement!==mbLine) mbLine.innerHTML=lines.map(l=>`<option value="${l.name}">${l.name}</option>`).join('');
-  document.getElementById('sku-datalist').innerHTML=skus.map(s=>`<option value="${s.code}">`).join('');
+  if(document.activeElement!==mbLine) mbLine.innerHTML=lines.map(l=>`<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
+  document.getElementById('sku-datalist').innerHTML=skus.map(s=>`<option value="${esc(s.code)}">`).join('');
   if(!document.getElementById('mb-date').value)
     document.getElementById('mb-date').value=`${year}-${String(month+1).padStart(2,'0')}-01`;
   const sl=document.getElementById('sku-list');
@@ -3552,7 +3723,7 @@ Job no: ${r.job}`:''}"><span class="pg-dot" style="background:${c};width:7px;hei
     const cnt=mps.filter(r=>r.sku===s.code).length;
     const opts=`<option value=""${!s.pg?' selected':''}>— unassigned</option>`+PGS.map(g2=>`<option value="${g2.key}"${g2.key===s.pg?' selected':''}>${g2.label}</option>`).join('');
     return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:.5px solid var(--border);">
-      <span style="font-size:11px;flex:1;${!s.pg?'color:var(--yellow);':''}" title="${(s.name||'').replace(/"/g,'&quot;')}"><span style="font-family:var(--mono);">${s.code}</span>${s.name?` <span style="color:var(--text2);font-size:9px;">${s.name.slice(0,28)}${s.name.length>28?'…':''}</span>`:''}</span>
+      <span style="font-size:11px;flex:1;${!s.pg?'color:var(--yellow);':''}" title="${esc(s.name||'')}"><span style="font-family:var(--mono);">${esc(s.code)}</span>${s.name?` <span style="color:var(--text2);font-size:9px;">${esc(s.name.slice(0,28))}${s.name.length>28?'…':''}</span>`:''}</span>
       <span style="font-family:var(--mono);font-size:10px;color:var(--text2);" title="batches using this SKU">${cnt}×</span>
       <input data-k="sku-${i}-std" class="numi" type="text" inputmode="decimal" style="width:56px;font-size:10px;" value="${s.stdMin??''}" placeholder="std min" title="Standard minutes per unit (used in the std-minutes capacity basis)" oninput="skus[${i}].stdMin=parseFloat(this.value.replace(',','.'))||undefined;render()">
       <select class="si" style="width:120px;" onchange="skus[${i}].pg=this.value||null;render()">${opts}</select>
@@ -3624,7 +3795,7 @@ function parseImport(text){
 function showImpPreview(out,errs){
   const el=document.getElementById('imp-preview');
   if(!out.length){
-    el.innerHTML=`<div style="font-size:11px;color:var(--red);">Nothing to import.${errs.length?' '+errs[0]:''}</div>`;
+    el.innerHTML=`<div style="font-size:11px;color:var(--red);">Nothing to import.${esc(errs.length?' '+errs[0]:'')}</div>`;
     return;
   }
   const months=[...new Set(out.map(o=>o.m))].sort();
@@ -3636,7 +3807,7 @@ function showImpPreview(out,errs){
       ${[...new Set(out.map(o=>o.pgKey))].length} group(s)
       ${errs.length?` · <span style="color:var(--yellow);">${errs.length} row(s) skipped</span>`:''}
     </div>
-    ${errs.slice(0,3).map(e=>`<div style="font-size:10px;color:var(--yellow);">${e}</div>`).join('')}
+    ${errs.slice(0,3).map(e=>`<div style="font-size:10px;color:var(--yellow);">${esc(e)}</div>`).join('')}
     <div style="display:flex;gap:8px;">
       <button class="add-btn" style="border-color:var(--green);color:var(--green);" onclick="applyImport()">✓ Apply import</button>
       <button class="add-btn" onclick="impPending=null;document.getElementById('imp-preview').innerHTML=''">Cancel</button>
@@ -3876,6 +4047,43 @@ let syncCfg={url:'',key:'',plan:'default',enabled:false};
 try{ Object.assign(syncCfg, JSON.parse(localStorage.getItem('ls_sync')||'{}')); }catch(e){}
 let pushT=null, suppressPush=false;
 let sbClient=null, authSession=null, authUser=null, authSubscription=null, authClientKey='', pendingAuthEmail='';
+let syncBaseline=null, syncConflict=null, syncBusy=false, syncPullSerial=0, syncStartupJSON='';
+const syncHadLocalPlan=!!localStorage.getItem('ls_planner');
+try{syncBaseline=JSON.parse(localStorage.getItem('ls_sync_baseline')||'null');}catch(e){}
+function syncScope(){ return JSON.stringify([syncCfg.url.replace(/\/+$/,''),authUser?.id||'',syncCfg.plan||'default']); }
+function knownSyncBase(){ return syncBaseline?.scope===syncScope()?syncBaseline:null; }
+function rememberSyncBase(revision,json){
+  syncPullSerial++; // invalidate older downloads when a newer revision is acknowledged
+  syncBaseline={scope:syncScope(),revision,json};
+  try{localStorage.setItem('ls_sync_baseline',JSON.stringify(syncBaseline));}catch(e){}
+}
+function renderSyncConflict(){
+  const el=document.getElementById('sync-conflict');
+  if(el) el.style.display=syncConflict?.scope===syncScope()?'block':'none';
+}
+function flagSyncConflict(row){
+  clearTimeout(pushT);
+  syncConflict={scope:syncScope(),row};
+  renderSyncConflict();
+  setSyncStatus('⚠ Local and cloud plans differ — open Secure sync to choose a plan.','var(--yellow)');
+}
+function syncRecoveryVersion(state,label){
+  const version={id:Date.now(),name:label,ts:Date.now(),state:JSON.parse(JSON.stringify(state))};
+  // Persist first: if browser storage is full, do not replace the local plan.
+  const next=[version,...planVersions].slice(0,20);
+  localStorage.setItem('ls_plan_versions',JSON.stringify(next));
+  planVersions=next;
+}
+async function resolveSyncConflict(choice){
+  if(!syncConflict||syncConflict.scope!==syncScope()) return;
+  if(choice==='cloud'){await cloudPull(false,true);return;}
+  try{
+    syncRecoveryVersion(syncConflict.row.data,'Cloud plan before keeping local — '+new Date().toLocaleString('en-GB'));
+    rememberSyncBase(syncConflict.row.updated_at,JSON.stringify(syncConflict.row.data));
+    syncConflict=null;renderSyncConflict();
+    await cloudPush();
+  }catch(e){setSyncStatus('⚠ Could not save a recovery version: '+e.message,'var(--red)');}
+}
 
 function authMsg(text,color){
   const el=document.getElementById('auth-message');
@@ -3898,10 +4106,12 @@ function renderAuthState(){
   }
 }
 function setAuthSession(session,pullCloud){
+  const previous=authUser?.id;
   authSession=session||null;
   authUser=session?.user||null;
+  if(previous!==authUser?.id){clearTimeout(pushT);syncPullSerial++;syncConflict=null;renderSyncConflict();}
   renderAuthState();
-  if(authUser&&syncCfg.enabled&&pullCloud) cloudPull(true);
+  if(authUser&&syncCfg.enabled&&pullCloud&&previous!==authUser.id) cloudPull(true);
   if(!authUser) setSyncStatus(syncCfg.enabled?'○ local mode — sign in to sync':'');
 }
 async function initAuth(){
@@ -4039,28 +4249,57 @@ const syncHdrs =()=>{
 function schedulePush(){
   if(!syncCfg.enabled||!syncReady()||!authUser||suppressPush) return;
   clearTimeout(pushT);
+  if(syncConflict?.scope===syncScope()||!knownSyncBase()||JSON.stringify(fullState())===knownSyncBase().json) return;
   pushT=setTimeout(cloudPush, 2500);
 }
 async function cloudPush(){
   if(!syncReady()){ alert('Set the Supabase URL and anon key first (☁ Sync).'); return; }
   if(!authUser){ setSyncStatus('○ local mode — sign in to sync'); openAuth(); return; }
   clearTimeout(pushT);
+  if(syncBusy) return;
+  if(syncConflict?.scope===syncScope()){renderSyncConflict();setSyncStatus('⚠ Sync paused — choose a plan in Secure sync.','var(--yellow)');return;}
+  if(!knownSyncBase()){
+    await cloudPull(true);
+    if(!knownSyncBase()||syncConflict) return;
+  }
+  if(syncBusy) return;
+  const scope=syncScope(),base=knownSyncBase(),state=fullState(),json=JSON.stringify(state);
+  if(json===base.json&&base.revision!==null){setSyncStatus('☁ Plan is up to date.','var(--green)');return;}
+  syncBusy=true;
+  syncPullSerial++;
+  let saved=false;
   try{
     setSyncStatus('☁ syncing…');
-    const res=await fetch(syncBase()+'?on_conflict=id',{
-      method:'POST',
-      headers:Object.assign(syncHdrs(),{Prefer:'resolution=merge-duplicates'}),
-      body:JSON.stringify([{
+    const revision=new Date(Math.max(Date.now(),(Date.parse(base.revision)||0)+1)).toISOString();
+    const record={
         id:syncCfg.plan||'default',
         owner_id:authUser.id,
-        data:fullState(),
-        updated_at:new Date().toISOString()
-      }])
+        data:state,
+        updated_at:revision
+    };
+    // The timestamp filter is an atomic compare-and-swap in PostgreSQL.
+    // An ordinary INSERT also prevents concurrent creation from overwriting a row.
+    const query=base.revision===null?'?select=updated_at'
+      :'?id=eq.'+encodeURIComponent(record.id)+'&updated_at=eq.'+encodeURIComponent(base.revision)+'&select=updated_at';
+    const res=await fetch(syncBase()+query,{
+      method:base.revision===null?'POST':'PATCH',
+      headers:Object.assign(syncHdrs(),{Prefer:'return=representation'}),
+      body:JSON.stringify(base.revision===null?[record]:record)
     });
+    if(scope!==syncScope()) return;
+    if(res.status===409){await cloudPull(true);return;}
     if(!res.ok) throw new Error(syncErr(res.status,await res.text()));
+    const rows=await res.json();
+    if(scope!==syncScope()) return;
+    if(!rows.length){await cloudPull(true);return;}
+    rememberSyncBase(rows[0].updated_at,json);saved=true;
+    syncConflict=null;renderSyncConflict();
     setSyncStatus('☁ synced '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),'var(--green)');
   }catch(e){
-    setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
+    if(scope===syncScope())setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
+  }finally{
+    syncBusy=false;
+    if(saved&&scope===syncScope())schedulePush();
   }
 }
 // Read-only check of what the cloud holds for this account and plan name
@@ -4077,19 +4316,19 @@ async function cloudDiagnose(){
     const rows=await res.json();
     const mine=rows.filter(r=>r.owner_id===authUser.id);
     const hit=mine.find(r=>r.id===plan);
-    let out=line(`Signed in as <strong style="color:var(--text);">${authUser.email}</strong>`)
-           +line(`Your user id: <span style="font-family:var(--mono);">${authUser.id}</span>`)
-           +line(`Plan name in settings: <strong style="color:var(--text);">${plan}</strong>`)
-           +line(`Plans visible to you: ${mine.length}${mine.length?' — '+mine.map(r=>r.id).join(', '):''}`);
+    let out=line(`Signed in as <strong style="color:var(--text);">${esc(authUser.email)}</strong>`)
+           +line(`Your user id: <span style="font-family:var(--mono);">${esc(authUser.id)}</span>`)
+           +line(`Plan name in settings: <strong style="color:var(--text);">${esc(plan)}</strong>`)
+           +line(`Plans visible to you: ${mine.length}${mine.length?' — '+mine.map(r=>esc(r.id)).join(', '):''}`);
     if(hit){
-      out+=line(`✓ "${plan}" exists and belongs to you (updated ${new Date(hit.updated_at).toLocaleString('en-GB')}). Push and pull should work.`,'var(--green-l)');
+      out+=line(`✓ "${esc(plan)}" exists and belongs to you (updated ${new Date(hit.updated_at).toLocaleString('en-GB')}). Push and pull should work.`,'var(--green-l)');
     } else {
-      out+=line(`No plan named "${plan}" belongs to you.`,'var(--yellow)')
+      out+=line(`No plan named "${esc(plan)}" belongs to you.`,'var(--yellow)')
           +line(`If pushing still fails with a row-level security error, a row with this name exists under another owner (or with no owner) and is hidden from you. Either pick a different plan name above and save, or claim the row in the Supabase SQL Editor:`,'var(--yellow)')
-          +`<div style="font-family:var(--mono);font-size:10px;background:var(--bg3);border-radius:5px;padding:6px 8px;margin-top:4px;color:var(--text);">update public.plans set owner_id = '${authUser.id}' where id = '${plan}';</div>`;
+          +`<div style="font-family:var(--mono);font-size:10px;background:var(--bg3);border-radius:5px;padding:6px 8px;margin-top:4px;color:var(--text);">update public.plans set owner_id = '${esc(authUser.id)}' where id = '${esc(plan)}';</div>`;
     }
     el.innerHTML=out;
-  }catch(e){ el.innerHTML=line('✕ '+e.message,'var(--red)'); }
+  }catch(e){ el.innerHTML=line('✕ '+esc(e.message),'var(--red)'); }
 }
 // Turn raw PostgREST/RLS errors into something actionable
 function syncErr(status,body){
@@ -4102,23 +4341,39 @@ function syncErr(status,body){
     return 'the plans table was not found — run supabase/secure_auth_migration.sql in the SQL Editor.';
   return 'HTTP '+status+' — '+String(body).slice(0,180);
 }
-async function cloudPull(silent){
+async function cloudPull(silent,acceptRemote=false){
   if(!syncReady()){ if(!silent) alert('Set the Supabase URL and anon key first (☁ Sync).'); return; }
   if(!authUser){ setSyncStatus('○ local mode — sign in to sync'); if(!silent) openAuth(); return; }
+  clearTimeout(pushT);
+  const scope=syncScope(),serial=++syncPullSerial,started=JSON.stringify(fullState());
   try{
     setSyncStatus('☁ loading…');
     const res=await fetch(syncBase()+'?id=eq.'+encodeURIComponent(syncCfg.plan||'default')+'&select=data,updated_at',{headers:syncHdrs()});
     if(!res.ok) throw new Error(syncErr(res.status,await res.text()));
     const rows=await res.json();
+    if(scope!==syncScope()||serial!==syncPullSerial)return;
+    const current=JSON.stringify(fullState()),base=knownSyncBase();
     if(rows.length&&rows[0].data){
-      applyFullState(rows[0].data);
+      const row=rows[0],remote=JSON.stringify(row.data);
+      if(current===remote){rememberSyncBase(row.updated_at,current);syncConflict=null;renderSyncConflict();}
+      else{
+        const changedDuringRequest=current!==started;
+        const dirty=base?current!==base.json:syncHadLocalPlan||current!==syncStartupJSON;
+        if(changedDuringRequest||(!acceptRemote&&dirty)){flagSyncConflict(row);return;}
+        if(dirty)syncRecoveryVersion(fullState(),'Local plan before loading cloud — '+new Date().toLocaleString('en-GB'));
+        applyFullState(row.data);
+        rememberSyncBase(row.updated_at,JSON.stringify(fullState()));
+        syncConflict=null;renderSyncConflict();
+      }
       setSyncStatus('☁ synced '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),'var(--green)');
     } else {
+      if(base?.revision){setSyncStatus('⚠ Cloud plan was removed. Local plan is kept; choose a new plan name to upload.','var(--yellow)');return;}
+      rememberSyncBase(null,started);
       setSyncStatus('☁ no cloud plan yet');
       if(!silent) alert('No plan named "'+(syncCfg.plan||'default')+'" in the cloud yet — use ⬆ Push to upload the current one.');
     }
   }catch(e){
-    setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
+    if(scope===syncScope()&&serial===syncPullSerial)setSyncStatus('⚠ sync failed — '+e.message,'var(--red)');
   }
 }
 function openSync(){
@@ -4127,15 +4382,18 @@ function openSync(){
   document.getElementById('sy-plan').value=syncCfg.plan||'default';
   document.getElementById('sy-on').checked=!!syncCfg.enabled;
   document.getElementById('sync-diag').innerHTML='';
+  renderSyncConflict();
   document.getElementById('sync-modal').style.display='flex';
 }
 function closeSync(){ document.getElementById('sync-modal').style.display='none'; }
 async function applySyncSettings(){
+  clearTimeout(pushT);syncPullSerial++;
   syncCfg.url=document.getElementById('sy-url').value.trim();
   syncCfg.key=document.getElementById('sy-key').value.trim();
   syncCfg.plan=document.getElementById('sy-plan').value.trim()||'default';
   syncCfg.enabled=document.getElementById('sy-on').checked;
   localStorage.setItem('ls_sync',JSON.stringify(syncCfg));
+  syncConflict=null;renderSyncConflict();
   closeSync();
   await initAuth();
   if(syncCfg.enabled&&authUser) cloudPull(true);
@@ -4151,7 +4409,7 @@ function save(){
   captureUndoHistory();
   try{
     localStorage.setItem('ls_planner', JSON.stringify({
-      lines:lineBase, lineOvr, pgDemand, weekOvr, demandMode, demModeOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, mpsBasis, mpsSetupDef, rcDeadline, scenarios,
+      lines:lineBase, lineOvr, pgDemand, weekOvr, demandMode, demModeOvr, blOpen, calEvents, calSeeded, workforce, wfOvr, skus, mps, lineAlias, mpsBasis, mpsSetupDef, rcDeadline, scenarios, productionLedger, productionImportInfo,
       curDate: curDate.toISOString(),
       sliders: {
         shifts: document.getElementById('shifts').value,
@@ -4176,6 +4434,7 @@ function resetData(){
   ];
   lineOvr={}; syncLines();
   pgDemand={}; weekOvr={}; blOpen={}; calEvents={}; calSeeded=[]; workforce={ops:0,contract:40,absence:8}; wfOvr={}; skus=[]; mps=[]; lineAlias={}; mpsBasis='units'; mpsSetupDef=0; rcDeadline=null; scenarios=[]; demandMode='pg'; demModeOvr={};
+  productionLedger={};productionImportInfo=null;
   curDate=new Date(); curDate.setDate(1);
   ['shifts','shiftlen','oee','days'].forEach(id=>{
     const defaults={shifts:'2',shiftlen:'8',oee:'72',days:'5'};
@@ -4205,6 +4464,9 @@ function load(){
     if(d.wfOvr)      wfOvr=d.wfOvr;
     if(d.skus)       skus=d.skus;
     if(d.mps)        mps=d.mps;
+    productionLedger=d.productionLedger||LineSightProduction.migrate(mps);
+    productionImportInfo=d.productionImportInfo||null;
+    reconcileProduction();
     if(d.lineAlias)  lineAlias=d.lineAlias;
     if(d.mpsBasis)   mpsBasis=d.mpsBasis;
     if(d.mpsSetupDef!==undefined) mpsSetupDef=d.mpsSetupDef;
@@ -4273,7 +4535,9 @@ document.addEventListener('beforeinput',e=>{
 },true);
 function render(){
   const focus=focusSnapshot();
+  reconcileProduction();
   syncLines();          // the month on screen may run its own line allocation
+  _calendarMemo={};
   _spillMemo.key=null;  // recompute cross-month MPS spill for this pass
   document.getElementById('month-label').textContent=`${MN[curDate.getMonth()]} ${curDate.getFullYear()}`;
   renderMetrics();
@@ -4329,6 +4593,7 @@ document.getElementById('footer-date').textContent=new Date().toLocaleDateString
 loadVersions();
 load();
 render();
+syncStartupJSON=JSON.stringify(fullState());
 initAuth().then(()=>{
   renderAuthState();
   if(syncCfg.enabled&&authUser) cloudPull(true);
