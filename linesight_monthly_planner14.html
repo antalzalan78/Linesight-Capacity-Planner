@@ -45,6 +45,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .metric-sub{font-size:10px;color:var(--text2);margin-top:3px;}
 .layout{display:grid;grid-template-columns:430px 1fr;gap:1.25rem;align-items:start;}
 @media(max-width:960px){.layout{grid-template-columns:1fr;}}
+.weekly-layout{grid-template-columns:minmax(300px,430px) minmax(0,1fr);grid-template-areas:"parameters breakdown" "lines lines" "calendar utilisation";}
+.weekly-settings,.weekly-reports{display:contents;}
+.weekly-layout .card{min-width:0;margin-bottom:0;}
+#base-parameters-card{grid-area:parameters;}
+#production-lines-card{grid-area:lines;}
+#calendar-card{grid-area:calendar;}
+#weekly-breakdown-card{grid-area:breakdown;}
+#line-utilisation-card{grid-area:utilisation;overflow-x:auto;}
+@media(max-width:960px){.weekly-layout{grid-template-columns:minmax(0,1fr);grid-template-areas:"parameters" "breakdown" "lines" "calendar" "utilisation";}}
 .col-right{min-width:0;overflow:hidden;}
 .col-right>*{margin-bottom:1.25rem;}
 .col-right>*:last-child{margin-bottom:0;}
@@ -70,7 +79,15 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #hc-line-table td, #hc-line-table th{padding:4px 5px;overflow:hidden;white-space:nowrap;}
 #hc-weekly-table{table-layout:fixed;font-size:11px;}
 #hc-weekly-table td, #hc-weekly-table th{padding:4px 4px;overflow:hidden;}
-#lines-table td, #lines-table th{padding:4px 3px;}
+.lines-table-scroll{width:100%;overflow-x:auto;padding-bottom:6px;}
+#lines-table{table-layout:fixed;width:100%;min-width:1052px;max-width:1280px;}
+#lines-table td,#lines-table th{padding:10px 12px;white-space:nowrap;}
+#lines-table th{font-size:11px;}
+#lines-table .shift-inputs{display:flex;gap:8px;justify-content:center;}
+#lines-table .shift-cell{display:flex;flex-direction:column;align-items:center;gap:5px;}
+#lines-table .shift-toggle{font-family:var(--mono);font-size:11px;line-height:1;width:48px;padding:5px 0;border-radius:4px;border:1px solid;cursor:pointer;}
+#lines-table .shift-label{font-family:var(--mono);font-size:11px;line-height:1;color:var(--text2);padding:6px 0;}
+#lines-table .shift-count{width:48px;min-width:48px;flex-shrink:0;}
 .mps-chip{cursor:grab;border-radius:3px;padding:1px 4px;margin:1px auto;background:rgba(24,40,59,0.07);white-space:nowrap;}
 .mps-chip:active{cursor:grabbing;}
 .mps-chip.mps-done{opacity:.75;text-decoration:line-through;text-decoration-color:currentColor;}
@@ -82,8 +99,10 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 #mps-tray{margin-top:12px;border:2px dashed var(--red);border-radius:7px;padding:8px 10px;min-height:46px;background:rgba(226,75,74,0.05);box-shadow:0 0 0 1px rgba(226,75,74,0.12);transition:background .12s,border-color .12s,box-shadow .12s;}
 #mps-tray.tray-has{background:rgba(226,75,74,0.12);box-shadow:0 0 0 1px rgba(226,75,74,0.28),0 0 14px rgba(226,75,74,0.10);}
 #mps-tray.tray-over{background:rgba(29,158,117,0.1);border:2px dashed var(--green);}
-#lines-table .ni, #lines-table .numi{font-size:12px;padding:4px 4px;}
-#lines-table .si{font-size:10px;padding:4px 3px;}
+#lines-table .ni,#lines-table .numi{font-size:14px;padding:7px 8px;}
+#lines-table .si{font-size:13px;padding:7px 8px;}
+#lines-table .line-name{min-width:144px;}
+#lines-table .line-product-group{width:200px;max-width:200px;}
 .gt th{font-family:var(--mono);font-size:10px;color:var(--text2);font-weight:500;padding:0 5px 8px;text-align:left;border-bottom:1px solid var(--border);}
 .gt th.c{text-align:center;}
 .gt td{padding:5px 5px;vertical-align:middle;border-bottom:.5px solid var(--border);font-size:11px;}
@@ -189,9 +208,9 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 
 <!-- ══ WEEKLY ══ -->
 <div class="view-panel active" id="panel-weekly">
-  <div class="layout">
-    <div>
-      <div class="card">
+  <div class="layout weekly-layout">
+    <div class="weekly-settings">
+      <div class="card" id="base-parameters-card">
         <div class="section-label">Base Parameters</div>
         <div class="param-row">
           <div class="param-label-row"><span class="param-label">Shifts / day</span><span class="param-val" id="shifts-out">2</span></div>
@@ -211,20 +230,31 @@ button:disabled{opacity:.6;cursor:not-allowed;}
           <div class="days-ticks" id="days-ticks"></div>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="production-lines-card">
         <div class="section-label">Production Lines — <span id="lines-month-label"></span></div>
+        <div class="lines-table-scroll" role="region" aria-label="Production lines table" tabindex="0">
         <table class="gt" id="lines-table">
+          <colgroup>
+            <col style="width:168px;">
+            <col style="width:128px;">
+            <col style="width:88px;">
+            <col style="width:200px;">
+            <col style="width:200px;">
+            <col style="width:224px;">
+            <col style="width:44px;">
+          </colgroup>
           <thead><tr>
-            <th style="width:70px;">Line</th>
-            <th class="c" style="width:50px;">Cap.(u/h)</th>
-            <th class="c" style="width:46px;" title="Line OEE %. Leave empty to use the base OEE slider. Weekly OEE overrides scale all lines proportionally.">OEE%</th>
-            <th class="c" style="width:104px;" title="Direct headcount per shift: the operators running the line. The S-button turns the shift on/off for this line (capacity counts only running shifts).">Direct HC</th>
-            <th class="c" style="width:104px;" title="Indirect headcount per shift: supervisor, technician, QC and other support staff on that shift.">Indirect HC</th>
-            <th style="min-width:84px;">Product group</th>
-            <th style="width:22px;"></th>
+            <th>Line</th>
+            <th class="c">Cap. (u/h)</th>
+            <th class="c" title="Line OEE %. Leave empty to use the base OEE slider. Weekly OEE overrides scale all lines proportionally.">OEE%</th>
+            <th class="c" title="Direct headcount per shift: the operators running the line. The S-button turns the shift on/off for this line (capacity counts only running shifts).">Direct HC</th>
+            <th class="c" title="Indirect headcount per shift: supervisor, technician, QC and other support staff on that shift.">Indirect HC</th>
+            <th>Product group</th>
+            <th></th>
           </tr></thead>
           <tbody id="lines-body"></tbody>
         </table>
+        </div>
         <button class="add-btn" onclick="addLine()">+ Add line</button>
         <div class="divider"></div>
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
@@ -236,7 +266,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
           <select class="si" id="lines-copy-from" style="width:100%;" onchange="copyLinesFrom(this.value);this.value='';"></select>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="calendar-card">
         <div class="section-label">Holidays &amp; maintenance — <span id="cal-month-label"></span></div>
         <p class="info-text">Dutch public holidays are added automatically for each year and are fully editable — delete any of them or add extra days (maintenance, bridge days, shutdowns). Each weekday event reduces that week's default working days; a manual Days value in the weekly grid still wins.</p>
         <div id="cal-list"></div>
@@ -252,12 +282,12 @@ button:disabled{opacity:.6;cursor:not-allowed;}
         <button class="add-btn" onclick="addCalEvent()">+ Add day</button>
       </div>
     </div>
-    <div class="col-right">
-      <div class="card">
+    <div class="weekly-reports">
+      <div class="card" id="weekly-breakdown-card">
         <div class="section-label">Weekly breakdown — <span id="weekly-month-label"></span></div>
         <div style="overflow-x:auto;"><table class="gt" id="week-grid-table"></table></div>
       </div>
-      <div class="card">
+      <div class="card" id="line-utilisation-card">
         <div class="section-label">Line utilisation</div>
         <table class="gt" id="line-util-table"></table>
       </div>
@@ -2001,12 +2031,12 @@ function renderLines(){
     const opts=PGS.map(g=>`<option value="${g.key}"${g.key===l.pg?' selected':''}>${g.label}</option>`).join('');
     const tr=document.createElement('tr');
     tr.innerHTML=`
-      <td><select class="si" onchange="lines[${i}].name=this.value;render()">${nameOpts(l.name)}</select></td>
+      <td><select class="si line-name" onchange="lines[${i}].name=this.value;render()">${nameOpts(l.name)}</select></td>
       <td class="c"><input class="numi" type="text" inputmode="numeric" value="${l.cap}" data-k="line-${i}-cap" min="1" max="99999" oninput="lines[${i}].cap=+this.value||0;render()"></td>
       <td class="c"><input class="numi" type="text" inputmode="numeric" value="${l.oee??''}" data-k="line-${i}-oee" placeholder="${Math.round(getP().oee*100)}" min="30" max="100" title="Line OEE % (empty = base ${Math.round(getP().oee*100)}%)" oninput="lines[${i}].oee=this.value===''?null:+this.value;render()"></td>
-      <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;"><button onclick="toggleShift(${i},${si})" title="Shift ${si+1} is ${act?'running — click to turn off':'off — click to run this shift'}" style="font-family:var(--mono);font-size:8px;line-height:1;width:26px;padding:2px 0;border-radius:3px;border:.5px solid ${act?'var(--green)':'var(--border)'};cursor:pointer;background:${act?'var(--green-bg)':'transparent'};color:${act?'var(--green-l)':'var(--text2)'};">S${si+1}</button><input class="numi" type="text" inputmode="numeric" value="${shiftHC(l,si)}" data-k="line-${i}-d${si}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Operators on shift ${si+1}" oninput="setShiftHC(${i},${si},this.value)"></div>`;}).join('')}</div></td>
-      <td class="c"><div style="display:flex;gap:3px;justify-content:center;">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<input class="numi" type="text" inputmode="numeric" value="${shiftHCI(l,si)}" data-k="line-${i}-i${si}" min="0" max="999" style="width:26px;padding:4px 2px;${act?'':'opacity:.35;'}" ${act?'':'disabled'} title="Indirect staff on shift ${si+1} (supervisor, technician, QC)" oninput="setShiftHCI(${i},${si},this.value)">`;}).join('')}</div></td>
-      <td><select class="si" onchange="lines[${i}].pg=this.value;render()">${opts}</select></td>
+      <td class="c"><div class="shift-inputs">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<div class="shift-cell"><button class="shift-toggle" onclick="toggleShift(${i},${si})" title="Shift ${si+1} is ${act?'running — click to turn off':'off — click to run this shift'}" style="border-color:${act?'var(--green)':'var(--border)'};cursor:pointer;background:${act?'var(--green-bg)':'transparent'};color:${act?'var(--green-l)':'var(--text2)'};">S${si+1}</button><input class="numi shift-count" type="text" inputmode="numeric" value="${shiftHC(l,si)}" data-k="line-${i}-d${si}" min="0" max="999" style="${act?'':'opacity:.55;'}" ${act?'':'disabled'} title="Operators on shift ${si+1}" oninput="setShiftHC(${i},${si},this.value)"></div>`;}).join('')}</div></td>
+      <td class="c"><div class="shift-inputs">${Array.from({length:getP().shifts},(_,si)=>{const act=lineActive(l,si);return `<div class="shift-cell"><span class="shift-label">S${si+1}</span><input class="numi shift-count" type="text" inputmode="numeric" value="${shiftHCI(l,si)}" data-k="line-${i}-i${si}" min="0" max="999" style="${act?'':'opacity:.55;'}" ${act?'':'disabled'} title="Indirect staff on shift ${si+1} (supervisor, technician, QC)" oninput="setShiftHCI(${i},${si},this.value)"></div>`;}).join('')}</div></td>
+      <td><select class="si line-product-group" onchange="lines[${i}].pg=this.value;render()">${opts}</select></td>
       <td><button class="del-btn" onclick="delLine(${i})">✕</button></td>
     `;
     body.appendChild(tr);
