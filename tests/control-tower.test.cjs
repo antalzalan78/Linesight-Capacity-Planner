@@ -28,6 +28,44 @@ test('minimum zero is preserved and an unset minimum does not imply healthy stoc
   assert.equal(T.inventory(rows,[{sku:'A_NLC',minimum:null}])[0].status,'Minimum not set');
 });
 
+test('a stock-only setup displays eligible items without masterdata or a private watchlist',()=>{
+  const rows=[{sku:'A_NLC',location:T.AVAILABLE[0],name:'Sample material',available:20,onHand:25},
+    {sku:'A_NLC',location:T.AVAILABLE[1],available:5,onHand:5},
+    {sku:'B_NLC',location:T.HOLD,available:9,onHand:9},
+    {sku:'OTHER_NLC',location:'Other warehouse',available:500,onHand:500}];
+  const watch=[],catalog=T.materialCatalog(rows,watch,{},'all'),actual=T.inventory(rows,catalog);
+  assert.deepEqual(catalog.map(r=>r.sku),['A_NLC','B_NLC']);assert.equal(catalog[0].category,'Unclassified');
+  assert.equal(actual[0].name,'Sample material');assert.equal(actual[0].available,25);assert.equal(actual[0].minimum,null);
+  assert.equal(actual[1].available,0);assert.equal(actual[1].blocked,9);assert.deepEqual(watch,[]);
+});
+
+test('stock overview preserves configured categories and minimums without expanding the strategic list',()=>{
+  const rows=[{sku:'A_NLC',location:T.AVAILABLE[0],available:5,onHand:5},{sku:'B_NLC',location:T.AVAILABLE[2],available:8,onHand:8}];
+  const watch=[{sku:'A_NLC',name:'Tracked',category:'Strategic',family:'Private family',minimum:10},
+    {sku:'MISSING_NLC',name:'Missing',category:'Strategic',family:'Private family',minimum:null}];
+  const items={A_NLC:{group:'Different',family:'Different'},B_NLC:{name:'Master name',group:'Bottles',family:'Glass'}};
+  const all=T.materialCatalog(rows,watch,items,'all');
+  assert.equal(all.length,2);assert.equal(all[0].category,'Strategic');assert.equal(all[0].minimum,10);
+  assert.equal(all[1].name,'Master name');assert.equal(all[1].category,'Bottles');
+  assert.equal(T.inventory(rows,all)[0].status,'Below minimum');
+  const strategic=T.inventory(rows,T.materialCatalog(rows,watch,items,'watch'));
+  assert.deepEqual(strategic.map(r=>r.sku),['A_NLC','MISSING_NLC']);assert.equal(strategic[1].available,null);
+  all[0].minimum=100;assert.equal(watch[0].minimum,10);assert.equal(watch.length,2);
+});
+
+test('an empty strategic scope stays explicitly empty instead of silently displaying every stock item',()=>{
+  const rows=[{sku:'A_NLC',location:T.AVAILABLE[0],available:1,onHand:1}];
+  assert.deepEqual(T.materialCatalog(rows,[],{},'watch'),[]);
+  assert.deepEqual(T.materialCatalog([],[],{},'all'),[]);
+});
+
+test('Control Tower asset versions are aligned across the page, UI and Excel worker',()=>{
+  const root=path.join(__dirname,'..'),ui=fs.readFileSync(path.join(root,'src','control-tower-ui.js'),'utf8');
+  const version=ui.match(/VERSION='([^']+)'/)[1],html=fs.readFileSync(path.join(root,'linesight_monthly_planner14.html'),'utf8');
+  for(const asset of ['control-tower.js','control-tower-ui.js','control-tower.css'])assert.ok(html.includes('./src/'+asset+'?v='+version));
+  assert.ok(fs.readFileSync(path.join(root,'src','erp-import-worker.js'),'utf8').includes('control-tower.js?v='+version));
+});
+
 test('duplicate master rows cannot multiply the production fact table',()=>{
   const m=T.master(matrix(['Item Code2','Type','Type 2','Country','HC required'],[
     ['1000000001_NLC','Soda makers','DUO','Germany',16],['1000000001_NLC','Soda makers','DUO','Germany',17],

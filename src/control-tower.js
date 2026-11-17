@@ -91,6 +91,18 @@
         transit:present?eligible.filter(r=>r.location===AVAILABLE[2]).reduce((s,r)=>s+r.available,0):null,detail};
     });
   }
+  function materialCatalog(rows,watch=[],items={},scope='watch'){
+    if(scope==='watch')return watch.map(r=>({...r}));
+    const tracked=new Map(watch.map(r=>[r.sku,r])),stockItems=new Map();
+    for(const r of rows){
+      if(!AVAILABLE.includes(r.location)&&r.location!==HOLD)continue;
+      if(!stockItems.has(r.sku)){
+        const item=items[r.sku],saved=tracked.get(r.sku);
+        stockItems.set(r.sku,saved?{...saved}:{sku:r.sku,name:item?.name||r.name||r.sku,category:item?.group||'Unclassified',family:item?.family||'Unclassified',minimum:null});
+      }
+    }
+    return [...stockItems.values()].sort((a,b)=>a.sku.localeCompare(b.sku));
+  }
   function lineKey(value){const m=text(value).match(/^(?:CFC[- ]?L|Line\s*)(\d+)$/i);return m?'Line'+Number(m[1]):text(value);}
   function calendar(days,from,to){
     if(!days.length)return [];
@@ -120,5 +132,5 @@
       lines:[...lines].map(([label,qty])=>({label,qty})).sort((a,b)=>b.qty-a.qty),groups:[...groups].map(([label,qty])=>({label,qty})).sort((a,b)=>b.qty-a.qty),
       items:[...skus].map(([sku,qty])=>({sku,qty,...(items[sku]||{name:sku,group:'Unmapped',family:'Unmapped'})})).sort((a,b)=>b.qty-a.qty)};
   }
-  return {AVAILABLE,HOLD,CFC,WATCH,text,sku,job,number,date,master,stock,transactions,mergeTransactions,inventory,production,lineKey,calendar,validateBackup};
+  return {AVAILABLE,HOLD,CFC,WATCH,text,sku,job,number,date,master,stock,transactions,mergeTransactions,inventory,materialCatalog,production,lineKey,calendar,validateBackup};
 });

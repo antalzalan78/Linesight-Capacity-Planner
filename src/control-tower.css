@@ -15,6 +15,8 @@
 .ct-chart{height:300px;position:relative;}
 .ct-chart.ct-tall{height:420px;}
 .ct-table-wrap{overflow:auto;max-height:600px;}
+.ct-pagination{margin-bottom:12px;align-items:center;}
+.ct-pagination .add-btn{margin:0;}
 .ct-table{min-width:1000px;}
 .ct-table th{position:sticky;top:0;background:var(--bg2);z-index:1;padding:10px;white-space:nowrap;}
 .ct-table td{padding:10px;line-height:1.4;}
