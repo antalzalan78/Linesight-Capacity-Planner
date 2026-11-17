@@ -89,6 +89,44 @@ test('production uses Quantity, not Built, and preserves the date of Excel times
   assert.equal(r.records[0].qty,25);assert.equal(r.records[0].date,T.date(46327));assert.equal(r.records[0].job,'123');
 });
 
+test('identical repeated Machine / Line columns are validated and count production only once',()=>{
+  const result=T.transactions(matrix([...headers,'Machine / Line'],[[...completion(1),'CFC-L1'],[...completion(2),'CFC-L1']]));
+  assert.equal(result.records.length,2);assert.equal(result.issues.length,0);assert.equal(result.warnings.length,1);
+  assert.equal(result.records[0].line,'CFC-L1');assert.equal(T.production(result.records).units,50);
+  assert.match(result.warnings[0],/Matching values or blanks are combined/);
+});
+
+test('repeated line columns coalesce non-empty values and preserve truly missing lines',()=>{
+  const rows=[completion(1),completion(2),completion(3)];rows[0][8]=' ';rows[2][8]=null;
+  const result=T.transactions(matrix([...headers,'Machine / Line'],[[...rows[0],'CFC-L2'],[...rows[1],''],[...rows[2],null]]));
+  assert.deepEqual(result.records.map(r=>r.line),['CFC-L2','CFC-L1','Unspecified']);assert.equal(result.issues.length,0);
+});
+
+test('conflicting repeated line values block the import instead of silently choosing a line',()=>{
+  const result=T.transactions(matrix([...headers,'Machine / Line'],[[...completion(1),'CFC-L2'],[...completion(2),'CFC-L1']]));
+  assert.equal(result.issues.length,1);assert.match(result.issues[0],/Row 2: conflicting Machine \/ Line/);
+  assert.match(result.issues[0],/CFC-L1 \/ CFC-L2/);assert.equal(result.records.length,1);assert.equal(result.records[0].id,'2');
+});
+
+test('repeated line headers are normalized without treating numbered legacy aliases as duplicates',()=>{
+  const result=T.transactions(matrix([...headers,' machine / line ','Machine / Line2'],[[...completion(1),' CFC-L1 ','Other legacy value']]));
+  assert.equal(result.issues.length,0);assert.equal(result.records[0].line,'CFC-L1');assert.equal(result.warnings.length,1);
+  const blank=completion(2);blank[8]='';
+  assert.equal(T.transactions(matrix([...headers,'Machine / Line2'],[[...blank,'CFC-L4']])).records[0].line,'CFC-L4');
+});
+
+test('every repeated line occurrence is checked, including a third conflicting column',()=>{
+  const result=T.transactions(matrix([...headers,'Machine / Line','Machine / Line'],[[...completion(1),'CFC-L1','CFC-L3']]));
+  assert.equal(result.records.length,0);assert.equal(result.issues.length,1);assert.equal(result.warnings.length,1);
+});
+
+test('duplicate quantity and ID headers remain blocked even if their values match',()=>{
+  for(const [name,value] of [['Quantity',25],['Internal ID',1],['quantity',25]]){
+    assert.throws(()=>T.transactions(matrix([...headers,name],[[...completion(1),value]])),/Duplicate column/);
+  }
+  assert.throws(()=>T.stock(matrix(['Item','Location','On Hand','Available','Available'],[['A_NLC',T.AVAILABLE[0],1,1,1]])),/Duplicate column/);
+});
+
 test('identical Internal IDs are deduplicated; distinct completions of one job remain distinct',()=>{
   const r=T.transactions(matrix(headers,[completion(1),completion(1),completion(2)]));
   assert.equal(r.records.length,2);assert.equal(r.duplicateRows,1);assert.equal(T.production(r.records).units,50);
@@ -157,9 +195,9 @@ test('Excel parsing worker runs offline and uses the same validated production a
   const ctx=vm.createContext(scope);
   ctx.importScripts=(...files)=>files.forEach(file=>vm.runInContext(fs.readFileSync(path.resolve(root,'src',file.split('?')[0]),'utf8'),ctx));
   vm.runInContext(fs.readFileSync(path.join(root,'src','erp-import-worker.js'),'utf8'),ctx);
-  const raw='Internal ID,Transaction Date,Item,Quantity,Type\n1,46327,A_NLC,25,Work Order Completion\n';
+  const raw='Internal ID,Transaction Date,Item,Quantity,Type,Machine / Line,Machine / Line\n1,46327,A_NLC,25,Work Order Completion,CFC-L1,CFC-L1\n';
   const buffer=new TextEncoder().encode(raw);
   await ctx.self.onmessage({data:{kind:'transactions',file:{name:'synthetic.csv',size:buffer.length,arrayBuffer:async()=>buffer.buffer}}});
   const result=messages.find(m=>m.result)?.result;
-  assert.ok(result,JSON.stringify(messages));assert.equal(result.records[0].qty,25);assert.equal(result.issues.length,0);
+  assert.ok(result,JSON.stringify(messages));assert.equal(result.records[0].qty,25);assert.equal(result.issues.length,0);assert.equal(result.records[0].line,'CFC-L1');assert.equal(result.warnings.length,1);
 });

@@ -48,3 +48,27 @@ test('a failed import write keeps existing ERP data and does not claim dashboard
   assert.deepEqual(p.saved(),initial);assert.match(p.element('ct-message').textContent,/Import was not saved/);
   assert.equal(p.element('ct-apply').disabled,false);
 });
+
+test('transaction preview accepts matching repeated line headers and opens production after Apply',async()=>{
+  const p=await towerUI();p.view('imports');
+  const input=p.inputs.find(r=>r.dataset.import==='transactions');
+  input.files=[{name:'synthetic.csv',matrix:[['Internal ID','Transaction Date','Item','Quantity','Type','Machine / Line','Machine / Line'],
+    ['1','2026-11-17','A_NLC',25,'Work Order Completion','CFC-L1','CFC-L1']]}];
+  input.onchange();await p.flush();
+  assert.match(p.element('ct-import-preview').innerHTML,/Matching values or blanks are combined/);
+  assert.doesNotMatch(p.element('ct-import-preview').innerHTML,/id="ct-apply" class="add-btn" disabled/);
+  await p.element('ct-apply').onclick();
+  assert.equal(p.saved().transactions.length,1);assert.equal(p.saved().transactions[0].line,'CFC-L1');
+  assert.match(p.html(),/Daily production/);assert.match(p.element('ct-message').textContent,/Production import saved/);
+});
+
+test('conflicting repeated line columns cannot be applied and keep previously imported transactions',async()=>{
+  const initial=state(),p=await towerUI(initial);p.view('imports');
+  const input=p.inputs.find(r=>r.dataset.import==='transactions');
+  input.files=[{name:'synthetic.csv',matrix:[['Internal ID','Transaction Date','Item','Quantity','Type','Machine / Line','Machine / Line'],
+    ['1','2026-11-17','A_NLC',25,'Work Order Completion','CFC-L1','CFC-L2']]}];
+  input.onchange();await p.flush();
+  assert.match(p.element('ct-import-preview').innerHTML,/conflicting Machine \/ Line/);
+  assert.match(p.element('ct-import-preview').innerHTML,/id="ct-apply" class="add-btn" disabled/);
+  await p.element('ct-apply').onclick();assert.deepEqual(p.saved(),initial);
+});

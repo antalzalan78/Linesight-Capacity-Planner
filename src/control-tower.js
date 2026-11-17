@@ -23,12 +23,19 @@
     const key=iso?iso.slice(1).join('-'):eu?[eu[3],eu[2].padStart(2,'0'),eu[1].padStart(2,'0')].join('-'):'';
     if(!key||isNaN(new Date(key))||new Date(key).toISOString().slice(0,10)!==key)return null;return key;
   }
-  function table(matrix,required){
+  function table(matrix,required,{repeatable=[],warnings=[]}={}){
     const at=matrix.slice(0,25).findIndex(row=>required.every(h=>row.some(c=>norm(c)===norm(h))));
     if(at<0)throw Error('Required columns not found: '+required.join(', '));
-    const headers=matrix[at].map(text),seen=new Set();
-    for(const h of headers){if(h&&seen.has(norm(h)))throw Error('Duplicate column: '+h);if(h)seen.add(norm(h));}
-    return matrix.slice(at+1).map((cells,i)=>{const r=Object.create(null);headers.forEach((h,j)=>{if(h)r[h]=cells[j]??null;});r._row=at+i+2;return r;});
+    const canonical=new Map([...required,...repeatable].map(h=>[norm(h),h])),allowed=new Set(repeatable.map(norm));
+    const headers=matrix[at].map(h=>canonical.get(norm(h))||text(h)),seen=new Set(),notified=new Set();
+    for(const h of headers){
+      const key=norm(h);if(h&&seen.has(key)){
+        if(!allowed.has(key))throw Error('Duplicate column: '+h);
+        if(!notified.has(key)){warnings.push(h+' appears more than once. Matching values or blanks are combined; different values block the import.');notified.add(key);}
+      }
+      if(h)seen.add(key);
+    }
+    return matrix.slice(at+1).map((cells,i)=>{const r=Object.create(null);headers.forEach((h,j)=>{if(!h)return;if(allowed.has(norm(h))){if(!r[h])r[h]=[];r[h].push(cells[j]??null);}else r[h]=cells[j]??null;});r._row=at+i+2;return r;});
   }
   function master(matrix){
     const rows=table(matrix,['Item Code2','Type']),groups=new Map(),issues=[];
@@ -58,19 +65,21 @@
     return {rows,issues,sourceRows:source.length,ignoredRows};
   }
   function transactions(matrix){
-    const source=table(matrix,['Internal ID','Transaction Date','Item','Quantity','Type']),records=[],issues=[];let ignoredRows=0,duplicateRows=0;
+    const warnings=[],source=table(matrix,['Internal ID','Transaction Date','Item','Quantity','Type'],{repeatable:['Machine / Line'],warnings}),records=[],issues=[];let ignoredRows=0,duplicateRows=0;
     const seen=new Map();
     for(const r of source){
       if(!text(r['Internal ID'])||!text(r.Item)){ignoredRows++;continue;}
       if(text(r.Type)!=='Work Order Completion'){ignoredRows++;continue;}
       const qty=number(r.Quantity),d=date(r['Transaction Date']);
       if(qty===null||!d){issues.push('Row '+r._row+': invalid transaction date or Quantity');continue;}
-      const record={id:text(r['Internal ID']),date:d,sku:sku(r.Item),qty,job:job(r.Job),line:text(r['Machine / Line']||r['Machine / Line2'])||'Unspecified',department:text(r.Department)||'Unspecified',erpGroup:text(r['NLC - Type Group']),erpType:text(r['NLC - Type'])};
+      const lines=[...new Set((r['Machine / Line']||[]).map(text).filter(Boolean))];
+      if(lines.length>1){issues.push('Row '+r._row+': conflicting Machine / Line values in repeated columns: '+lines.join(' / '));continue;}
+      const record={id:text(r['Internal ID']),date:d,sku:sku(r.Item),qty,job:job(r.Job),line:lines[0]||text(r['Machine / Line2'])||'Unspecified',department:text(r.Department)||'Unspecified',erpGroup:text(r['NLC - Type Group']),erpType:text(r['NLC - Type'])};
       const signature=JSON.stringify(record);
       if(seen.has(record.id)){duplicateRows++;if(seen.get(record.id)!==signature)issues.push('Conflicting Internal ID '+record.id);continue;}
       seen.set(record.id,signature);records.push(record);
     }
-    return {records,issues,sourceRows:source.length,ignoredRows,duplicateRows};
+    return {records,issues,warnings,sourceRows:source.length,ignoredRows,duplicateRows};
   }
   function mergeTransactions(previous,incoming){
     const map=new Map(previous.map(r=>[r.id,r]));let added=0,updated=0,unchanged=0;
