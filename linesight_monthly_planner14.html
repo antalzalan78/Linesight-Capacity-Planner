@@ -5,10 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LineSight — Monthly Capacity Planner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="./vendor/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./src/calculations.js?v=cb6c69b40ffe"></script>
 <script src="./src/production.js?v=5bc41f75a050"></script>
+<script src="./src/control-tower.js?v=20261116-1"></script>
+<link rel="stylesheet" href="./src/control-tower.css?v=20261116-1">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 :root{
@@ -1947,7 +1949,7 @@ function delCalEvent(k){ delete calEvents[k]; render(); }
 function changeMonth(d){ curDate.setMonth(curDate.getMonth()+d); render(); }
 function switchTab(name){
   activeTab=name;
-  ['weekly','mps','monthly','backlog','demand','headcount','chart','scenarios'].forEach((n,i)=>
+  ['weekly','mps','monthly','backlog','demand','headcount','chart','scenarios','tower'].forEach((n,i)=>
     document.querySelectorAll('.tab')[i].classList.toggle('active',n===name));
   document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
@@ -2589,6 +2591,7 @@ function downloadCSV(rows,filename){
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},0);
 }
 function exportCSV(){
+  if(activeTab==='tower'&&window.LineSightTowerUI){window.LineSightTowerUI.exportView();return;}
   const year=curDate.getFullYear(), month=curDate.getMonth(), m=mk(curDate);
   const weeks=weeksOf(year,month), p=getP();
   const fmt=d=>d.toLocaleDateString('en-GB',{month:'numeric',day:'numeric'});
@@ -3988,6 +3991,7 @@ function captureUndoHistory(){
   updateUndoButton();
 }
 function undoPlan(){
+  if(activeTab==='tower')return; // ERP data has its own durable backup, separate from plan history.
   if(!undoStack.length) return;
   const previous=undoStack.pop();
   suppressHistory=true;
@@ -4565,6 +4569,9 @@ document.addEventListener('beforeinput',e=>{
 },true);
 function render(){
   const focus=focusSnapshot();
+  document.getElementById('metrics-strip').style.display=activeTab==='tower'?'none':'';
+  const monthNav=document.querySelector('.month-nav');if(monthNav)monthNav.style.display=activeTab==='tower'?'none':'';
+  document.querySelectorAll('.footer button[onclick="undoPlan()"],.footer button[onclick="openHistory()"],.footer button[onclick="printReport()"],.footer button[onclick="resetData()"],.footer #ai-btn').forEach(b=>b.style.display=activeTab==='tower'?'none':'inline-flex');
   reconcileProduction();
   syncLines();          // the month on screen may run its own line allocation
   _calendarMemo={};
@@ -4580,6 +4587,7 @@ function render(){
   if(activeTab==='headcount')  renderHeadcount();
   if(activeTab==='chart')      renderCharts();
   if(activeTab==='scenarios')  renderScenarios();
+  if(activeTab==='tower'&&window.LineSightTowerUI)window.LineSightTowerUI.render();
   focusRestore(focus);
   save();
 }
@@ -4630,5 +4638,6 @@ initAuth().then(()=>{
   else if(syncCfg.enabled) setSyncStatus('○ local mode — sign in to sync');
 });
 </script>
+<script src="./src/control-tower-ui.js?v=20261116-1"></script>
 </body>
 </html>
