@@ -15,6 +15,61 @@ const stock=[{sku:'A_NLC',location:T.AVAILABLE[0],name:'Glass A',available:100,o
   {sku:'E_NLC',location:'Excluded warehouse',available:999,onHand:999}];
 const state=()=>({version:1,revision:1,master:{items:{},issues:[]},watch:structuredClone(watch),transactions:[],stock:[{date:'2026-11-18',rows:structuredClone(stock),source:'Synthetic stock',at:'2026-11-18T08:00:00Z'}],imports:{}});
 function fields(p,setup){for(const panel of setup)for(const group of panel.groups){p.element('ct-monitor-name-'+panel.id+'-'+group.id).value=group.name;p.element('ct-monitor-skus-'+panel.id+'-'+group.id).value=group.skus.join('\n');p.element('ct-monitor-ss-'+panel.id+'-'+group.id).value=group.safetyStock===null?'':String(group.safetyStock);}}
+function drawLabels(plot,{bars,targets=[],hidden=[],width=600,values=plot.config.data.datasets[0].data}={}){
+  const drawn=[],outline=[],calls=[];
+  const ctx={save(){calls.push('save');},restore(){calls.push('restore');},measureText:text=>({width:text.length*7}),
+    fillText(text,x,y){drawn.push({text,x,y});},strokeText(text,x,y){outline.push({text,x,y});}};
+  plot.config.plugins[0].afterDatasetsDraw({ctx,width,chartArea:{left:40,right:460,top:40,bottom:300},
+    data:{datasets:[{data:values}]},isDatasetVisible:index=>!hidden.includes(index),
+    getDatasetMeta:index=>({data:index===0?(bars||values.map((v,i)=>({x:100+i*100,y:100,base:300}))):targets})});
+  return {drawn,outline,calls,ctx};
+}
+
+test('stock columns show full quantities with separators and retain their source precision',async()=>{
+  const input=state();input.stock[0].rows[0].available=1234467.25;
+  input.monitors=T.updateMonitor(T.defaultMonitors(watch),'glass',[{id:'g1',safetyStock:1500000}]);
+  const p=await towerUI(input),plot=p.plots.find(c=>c.canvas.id==='ct-monitor-chart-glass'),result=drawLabels(plot);
+  assert.deepEqual(result.drawn,[{text:'1,234,567.25',x:100,y:93}]);
+  assert.deepEqual(result.outline,result.drawn);assert.deepEqual(result.calls,['save','restore']);
+  assert.equal(plot.config.options.scales.y.grace,'15%');assert.equal(plot.config.options.layout.padding.top,14);
+  assert.deepEqual([...plot.config.data.datasets[1].data],[1500000]);assert.deepEqual(p.saved(),input);
+  p.element('ct-export').onclick();assert.match(await p.downloads[0].text(),/1234567\.25,1500000,/);
+});
+
+test('stock labels distinguish partial sums, actual zero and missing stock',async()=>{
+  const input=state();input.stock[0].rows=input.stock[0].rows.filter(r=>r.sku!=='B_NLC');
+  const p=await towerUI(input),plot=id=>p.plots.find(c=>c.canvas.id==='ct-monitor-chart-'+id);
+  assert.equal(drawLabels(plot('glass')).drawn[0].text,'150*');
+  assert.equal(drawLabels(plot('custom')).drawn[0].text,'0');
+  assert.deepEqual(drawLabels(plot('swm')).drawn,[]);assert.deepEqual(drawLabels(plot('cylinders')).drawn,[]);
+});
+
+test('stock labels respect the legend and skip invalid or missing bar geometry',async()=>{
+  const p=await towerUI(state()),plot=p.plots[0];
+  const hidden=drawLabels(plot,{hidden:[0]});assert.deepEqual(hidden.drawn,[]);assert.deepEqual(hidden.calls,[]);
+  const invalid=drawLabels(plot,{values:[null,NaN,Infinity,10,20,30,40],bars:[
+    {x:100,y:100,base:300},{x:150,y:100,base:300},{x:200,y:100,base:300},
+    {x:250,y:NaN,base:300},{x:300,y:100,base:300,skip:true},undefined,{x:400,y:100,base:300}]});
+  assert.deepEqual(invalid.drawn,[{text:'40',x:400,y:93}]);assert.deepEqual(invalid.calls,['save','restore']);
+});
+
+test('stock labels stay inside the plot and avoid a nearby safety-stock marker',async()=>{
+  const p=await towerUI(state()),plot=p.plots[0];
+  const near=drawLabels(plot,{width:400,bars:[{x:42,y:100,base:300}],targets:[{x:42,y:91}]});
+  assert.deepEqual(near.drawn,[{text:'200',x:52.5,y:84}]);assert.match(near.ctx.font,/11px/);
+  const right=drawLabels(plot,{bars:[{x:459,y:100,base:300}],targets:[{x:459,y:91}],hidden:[1]});
+  assert.deepEqual(right.drawn,[{text:'200',x:447.5,y:93}]);
+  const negative=drawLabels(plot,{values:[-200],bars:[{x:100,y:360,base:300}]});
+  assert.deepEqual(negative.drawn,[{text:'-200',x:100,y:293}]);
+});
+
+test('value labels are local to the four strategic stock monitors',async()=>{
+  const input=state();input.transactions=[{id:'1',sku:'A_NLC',date:'2026-11-18',qty:10,job:'J1',department:T.CFC,line:'CFC-L1'}];
+  const p=await towerUI(input);
+  assert.equal(p.plots.length,4);assert.ok(p.plots.every(plot=>plot.config.plugins.length===1&&plot.config.plugins[0].id==='linesight-stock-values'));
+  p.view('production');
+  const production=p.plots.filter(plot=>!plot.destroyed);assert.equal(production.length,4);assert.ok(production.every(plot=>plot.config.plugins.length===0));
+});
 
 test('legacy private watchlists create four monitor panels without publishing item presets',()=>{
   const setup=T.defaultMonitors(watch);

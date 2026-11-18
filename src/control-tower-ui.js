@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const T=window.LineSightTower,VERSION='20261118-2';
+  const T=window.LineSightTower,VERSION='20261118-3';
   const el=id=>document.getElementById(id);
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt=v=>v===null||v===undefined?'—':Number(v).toLocaleString('en-GB',{maximumFractionDigits:2});
@@ -30,9 +30,27 @@
   const unique=values=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   const metric=(label,value,sub='')=>`<div class="metric"><div class="metric-label">${escape(label)}</div><div class="metric-val">${escape(value)}</div><div class="metric-sub">${escape(sub)}</div></div>`;
   function source(info){return info?`${escape(info.source)} · imported ${escape(new Date(info.at).toLocaleString('en-GB'))}`:'Not imported';}
-  function chart(id,type,labels,datasets,extra={}){
+  // Local to stock monitors: keep exact quantities visible without labelling safety-stock markers.
+  function stockValueLabels(groups){return {id:'linesight-stock-values',afterDatasetsDraw(plot){
+    if(!plot.isDatasetVisible(0))return;
+    const {ctx,chartArea}=plot,bars=plot.getDatasetMeta(0).data,targets=plot.isDatasetVisible(1)?plot.getDatasetMeta(1).data:[],fontSize=plot.width<600?11:12;
+    ctx.save();ctx.font='600 '+fontSize+'px "IBM Plex Mono", monospace';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillStyle='#243b53';ctx.strokeStyle='#ffffff';ctx.lineWidth=4;ctx.lineJoin='round';
+    plot.data.datasets[0].data.forEach((value,index)=>{
+      const bar=bars[index];
+      if(typeof value!=='number'||!Number.isFinite(value)||!bar||bar.skip||![bar.x,bar.y,bar.base].every(Number.isFinite))return;
+      const label=fmt(value)+(groups[index]?.complete===false?'*':''),half=ctx.measureText(label).width/2;
+      const x=Math.max(chartArea.left+half+2,Math.min(bar.x,chartArea.right-half-2));
+      let y=Math.min(bar.y,bar.base)-7;
+      const target=targets[index];
+      if(target&&!target.skip&&Number.isFinite(target.y)&&target.y>=y-fontSize-4&&target.y<=y+4)y=target.y-7;
+      y=Math.max(chartArea.top+fontSize,y);
+      ctx.strokeText(label,x,y);ctx.fillText(label,x,y);
+    });
+    ctx.restore();
+  }};}
+  function chart(id,type,labels,datasets,extra={},localPlugins=[]){
     if(!window.Chart){el(id).parentElement.innerHTML='<div class="ct-empty">Chart library unavailable. The table and exports still show the data.</div>';return;}
-    charts.push(new Chart(el(id),{type,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{labels:{color:'#506176',font:{size:12}}}},scales:{x:{grid:{color:'#eaf0f6'},ticks:{color:'#506176',font:{size:11}}},y:{beginAtZero:true,grid:{color:'#eaf0f6'},ticks:{color:'#506176',font:{size:11}}}},...extra}}));
+    charts.push(new Chart(el(id),{type,plugins:localPlugins,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{labels:{color:'#506176',font:{size:12}}}},scales:{x:{grid:{color:'#eaf0f6'},ticks:{color:'#506176',font:{size:11}}},y:{beginAtZero:true,grid:{color:'#eaf0f6'},ticks:{color:'#506176',font:{size:11}}}},...extra}}));
   }
   function render(){
     if(!el('ct-body'))return;destroyCharts();
@@ -79,7 +97,7 @@
     for(const p of results)if(p.groups.length)chart('ct-monitor-chart-'+p.id,'bar',p.groups.map(g=>g.name),[
       {label:'Available stock',data:p.groups.map(g=>g.available),backgroundColor:p.groups.map(g=>!g.complete?'#b58223':g.available<=0?'#bd363a':g.gap===null?'#2466ad':g.gap<0?'#bd363a':'#08775a'),maxBarThickness:60,order:1},
       {label:'Safety stock',type:'line',data:p.groups.map(g=>g.safetyStock),showLine:false,pointStyle:'line',pointRadius:14,pointHoverRadius:16,borderWidth:3,borderColor:'#946000',backgroundColor:'#946000',order:0}
-    ],{plugins:{legend:{labels:{color:'#506176',font:{size:12},usePointStyle:true}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.raw)+(ctx.datasetIndex===0&&!p.groups[ctx.dataIndex].complete?' (partial; missing items)':'')}}},scales:{x:{grid:{display:false},ticks:{color:'#506176',autoSkip:false,maxRotation:45,minRotation:0}},y:{beginAtZero:true,ticks:{color:'#506176'},grid:{color:'#eaf0f6'}}}});
+    ],{layout:{padding:{top:14}},plugins:{legend:{labels:{color:'#506176',font:{size:12},usePointStyle:true}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.raw)+(ctx.datasetIndex===0&&!p.groups[ctx.dataIndex].complete?' (partial; missing items)':'')}}},scales:{x:{grid:{display:false},ticks:{color:'#506176',autoSkip:false,maxRotation:45,minRotation:0}},y:{beginAtZero:true,grace:'15%',ticks:{color:'#506176'},grid:{color:'#eaf0f6'}}}},[stockValueLabels(p.groups)]);
   }
   function explorer(){
     const snapshot=currentSnapshot(),rows=inventoryRows(),tracked=new Set(data.watch.map(r=>r.sku)),perItemChart=!!filters.category&&rows.length<=40;
