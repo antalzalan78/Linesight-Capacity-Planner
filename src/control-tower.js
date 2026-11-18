@@ -127,6 +127,67 @@
     }
     return [...stockItems.values()].sort((a,b)=>a.sku.localeCompare(b.sku));
   }
+  const MONITORS=[{id:'glass',name:'Glass bottles'},{id:'swm',name:'Generic SWM'},{id:'cylinders',name:'Gas cylinders'},{id:'custom',name:'Other monitored items'}];
+  function defaultMonitors(watch=[]){
+    const panels=MONITORS.map(p=>({...p,groups:[]})),categories=new Map([['glass bottles','glass'],['generic swm','swm'],['cylinders','cylinders'],['gas cylinders','cylinders']]);
+    for(const item of watch){
+      const panel=panels.find(p=>p.id===(categories.get(labelKey(item.category))||'custom'));
+      const name=panel.id==='custom'?(item.name||item.sku):(item.family||item.name||item.sku);
+      let group=panel.groups.find(g=>labelKey(g.name)===labelKey(name));
+      if(!group){group={id:'g'+(panel.groups.length+1),name,skus:[],safetyStock:null};panel.groups.push(group);}
+      const key=sku(item.sku);if(!group.skus.includes(key))group.skus.push(key);
+    }
+    for(const panel of panels)for(const group of panel.groups)if(group.skus.length===1){const item=watch.find(w=>sku(w.sku)===group.skus[0]);group.safetyStock=number(item?.minimum);}
+    return panels;
+  }
+  function validateMonitors(value){
+    const fail=detail=>{throw Error('Invalid monitor setup: '+detail+'. Existing ERP data was kept.');};
+    if(!Array.isArray(value)||value.length!==MONITORS.length)fail('four panels are required');
+    const panels=new Set();
+    for(const panel of value){
+      if(!panel||!MONITORS.some(p=>p.id===panel.id)||panels.has(panel.id)||typeof panel.name!=='string'||!text(panel.name)||panel.name.length>120||!Array.isArray(panel.groups)||panel.groups.length>200)fail('invalid panel');
+      panels.add(panel.id);const ids=new Set(),members=new Set();
+      for(const group of panel.groups){
+        if(!group||typeof group.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(group.id)||ids.has(group.id)||typeof group.name!=='string'||!text(group.name)||group.name.length>160||!Array.isArray(group.skus)||!group.skus.length||group.skus.length>200||(group.safetyStock!==null&&(!Number.isFinite(group.safetyStock)||group.safetyStock<0)))fail('invalid group or safety stock');
+        ids.add(group.id);
+        for(const key of group.skus){if(typeof key!=='string'||!key||key.length>100||sku(key)!==key||members.has(key))fail('an item is invalid or listed more than once in '+panel.name);members.add(key);}
+      }
+    }
+    return value;
+  }
+  function monitorSetup(watch=[],saved){return saved===undefined?defaultMonitors(watch):validateMonitors(saved);}
+  function monitorResults(rows,setup){
+    validateMonitors(setup);
+    const keys=[...new Set(setup.flatMap(p=>p.groups.flatMap(g=>g.skus)))],items=new Map(inventory(rows,keys.map(sku=>({sku,name:sku,minimum:null}))).map(r=>[r.sku,r]));
+    return setup.map(panel=>({...panel,groups:panel.groups.map(group=>{
+      const detail=group.skus.map(key=>items.get(key)),known=detail.filter(r=>r.available!==null),missing=detail.filter(r=>r.available===null).map(r=>r.sku);
+      const available=known.length?known.reduce((sum,r)=>sum+r.available,0):null,complete=!missing.length;
+      const gap=complete&&group.safetyStock!==null?available-group.safetyStock:null;
+      const status=available===null?'Not in export':!complete?'Partial stock data':available<=0?'No available stock':group.safetyStock===null?'Safety stock not set':gap<0?'Below safety stock':'At / above safety stock';
+      return {...group,available,complete,missing,found:known.length,count:detail.length,gap,status,detail};
+    })}));
+  }
+  function updateMonitor(setup,panelId,changes){
+    const next=JSON.parse(JSON.stringify(setup)),panel=next.find(p=>p.id===panelId);
+    if(!panel)throw Error('Unknown monitor panel.');
+    for(const change of changes){const group=panel.groups.find(g=>g.id===change.id);if(!group)throw Error('Unknown monitor group.');
+      if(change.name!==undefined)group.name=text(change.name);
+      if(change.skus!==undefined)group.skus=change.skus.map(sku);
+      if(change.safetyStock!==undefined)group.safetyStock=change.safetyStock;
+    }
+    return validateMonitors(next);
+  }
+  function importMonitorSetup(payload,current){
+    if(!payload||payload.kind!=='linesight-monitor-setup'||payload.version!==1)throw Error('Choose a LineSight monitor setup JSON file, not an ERP backup or stock workbook.');
+    const incoming=JSON.parse(JSON.stringify(validateMonitors(payload.monitors)));
+    // Preserve previously set targets when a setup reimports the same exact SKU population.
+    const signature=g=>g.skus.slice().sort().join('\n');
+    for(const panel of incoming)for(const group of panel.groups){
+      const old=current?.find(p=>p.id===panel.id)?.groups.find(g=>signature(g)===signature(group));
+      if(old&&old.safetyStock!==null)group.safetyStock=old.safetyStock;
+    }
+    return incoming;
+  }
   function lineKey(value){const m=text(value).match(/^(?:CFC[- ]?L|Line\s*)(\d+)$/i);return m?'Line'+Number(m[1]):text(value);}
   function calendar(days,from,to){
     if(!days.length)return [];
@@ -143,6 +204,7 @@
     for(const s of state.stock){if(!s||typeof s.date!=='string'||date(s.date)!==s.date||dates.has(s.date)||!Array.isArray(s.rows))fail();dates.add(s.date);for(const r of s.rows)if(!r||typeof r.sku!=='string'||!r.sku||typeof r.location!=='string'||!Number.isFinite(r.available)||!Number.isFinite(r.onHand))fail();}
     for(const r of state.watch){if(!r||typeof r.sku!=='string'||!r.sku||watch.has(r.sku)||typeof r.category!=='string'||typeof r.family!=='string'||typeof r.name!=='string'||(r.minimum!==null&&(!Number.isFinite(r.minimum)||r.minimum<0)))fail();watch.add(r.sku);}
     for(const r of Object.values(state.master.items))if(!r||['group','family','name','generic','variant'].some(k=>typeof r[k]!=='string'))fail();
+    if(state.monitors!==undefined)validateMonitors(state.monitors);
     return state;
   }
   function production(records,items={},filters={}){
@@ -157,5 +219,5 @@
       lines:[...lines].map(([label,qty])=>({label,qty})).sort((a,b)=>b.qty-a.qty),groups:[...groups].map(([label,qty])=>({label,qty})).sort((a,b)=>b.qty-a.qty),
       items:[...skus].map(([sku,qty])=>({sku,qty,...(items[sku]||{name:sku,group:'Unmapped',family:'Unmapped'})})).sort((a,b)=>b.qty-a.qty)};
   }
-  return {AVAILABLE,HOLD,CFC,WATCH,text,sku,job,number,date,labelKey,labelOptions,canonicalMaster,master,stock,transactions,mergeTransactions,inventory,materialCatalog,production,lineKey,calendar,validateBackup};
+  return {AVAILABLE,HOLD,CFC,WATCH,MONITORS,text,sku,job,number,date,labelKey,labelOptions,canonicalMaster,master,stock,transactions,mergeTransactions,inventory,materialCatalog,defaultMonitors,validateMonitors,monitorSetup,monitorResults,updateMonitor,importMonitorSetup,production,lineKey,calendar,validateBackup};
 });

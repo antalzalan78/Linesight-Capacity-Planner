@@ -7,7 +7,7 @@ const T=require('../../src/control-tower.js');
 async function towerUI(initial,{failWrite=false}={}){
   let saved=initial?structuredClone(initial):undefined;
   const elements=new Map(),downloads=[],plots=[];
-  const tabs=['materials','production','imports'].map(view=>({dataset:{view},setAttribute(){}}));
+  const tabs=['materials','explorer','production','imports'].map(view=>({dataset:{view},setAttribute(){}}));
   const inputs=['master','stock','transactions'].map(kind=>({dataset:{import:kind},files:[]}));
   function element(id){
     if(elements.has(id))return elements.get(id);

@@ -7,7 +7,7 @@ const stockRows=Array.from({length:102},(_,i)=>({sku:'QA'+String(i).padStart(3,'
 const state=()=>({version:1,revision:1,master:{items:{},issues:[]},transactions:[],watch:[],imports:{},stock:[{date:'2026-11-17',rows:stockRows,source:'synthetic.csv',at:'2026-11-17T09:00:00Z'}]});
 
 test('UI renders stock-only data and keeps all filtered items in CSV when the table is paginated',async()=>{
-  const p=await towerUI(state());
+  const p=await towerUI(state());p.view('explorer');
   assert.match(p.html(),/Stock items/);assert.match(p.html(),/Showing 1–100 of 102/);
   assert.equal((p.html().match(/data-item=/g)||[]).length,100);
   p.element('ct-material-next').onclick();
@@ -20,7 +20,7 @@ test('UI renders stock-only data and keeps all filtered items in CSV when the ta
 });
 
 test('empty strategic scope and no-match filters have actionable empty states',async()=>{
-  const p=await towerUI(state());p.change('ct-stock-scope','watch');
+  const p=await towerUI(state());p.view('explorer');p.change('ct-stock-scope','watch');
   assert.match(p.html(),/Your strategic watchlist is empty/);assert.doesNotMatch(p.html(),/<canvas/);
   p.element('ct-reset-materials').onclick();assert.match(p.html(),/Showing 1–100 of 102/);
   p.element('ct-material-search').value='does-not-exist';p.element('ct-apply-search').onclick();assert.match(p.html(),/No materials match these filters/);
