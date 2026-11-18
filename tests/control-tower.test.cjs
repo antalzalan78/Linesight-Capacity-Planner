@@ -82,6 +82,50 @@ test('conflicting master classifications are exposed rather than chosen by row o
   assert.equal(m.items.A_NLC.group,'Conflicting masterdata');assert.equal(m.issues.length,1);
 });
 
+test('classification choices merge case and whitespace variants without changing acronyms or real distinctions',()=>{
+  const labels=T.labelOptions(['SODA MAKERS','Soda makers',' soda   makers ','DUO','duo','E-DUO','E DUO','é','e']);
+  assert.deepEqual(labels.filter(v=>T.labelKey(v)==='soda makers'),['Soda makers']);
+  assert.deepEqual(labels.filter(v=>T.labelKey(v)==='duo'),['DUO']);
+  assert.ok(labels.includes('E-DUO'));assert.ok(labels.includes('E DUO'));assert.ok(labels.includes('é'));assert.ok(labels.includes('e'));
+  assert.deepEqual(T.labelOptions(labels.slice().reverse()),T.labelOptions(labels));
+});
+
+test('new masterdata imports do not flag case-only classification differences as conflicts',()=>{
+  const m=T.master(matrix(['Item Code2','Description','Type','Type 2','Type3','Generic'],[
+    ['A_NLC','Same name','SODA MAKERS','DUO','BLACK','GENERIC'],
+    ['A_NLC','Same name','Soda makers','duo','black','Generic'],
+    ['B_NLC','Other name','soda makers','duo','black','generic']
+  ]));
+  assert.equal(m.issues.length,0);assert.equal(m.duplicateRows,1);assert.deepEqual(m.items.A_NLC.conflicts,[]);
+  assert.equal(m.items.A_NLC.group,'Soda makers');assert.equal(m.items.A_NLC.family,'DUO');assert.equal(m.items.A_NLC.generic,'Generic');
+  assert.equal(m.items.B_NLC.group,m.items.A_NLC.group);assert.equal(m.items.B_NLC.family,m.items.A_NLC.family);
+});
+
+test('canonical masterdata supports existing imports without mutating stored identifiers or descriptions',()=>{
+  const source={A_NLC:{sku:'A_NLC',name:'Keep THIS description',group:'SODA MAKERS',family:'duo',generic:'GENERIC'},
+    B_NLC:{sku:'B_NLC',name:'Another Description',group:'Soda makers',family:'DUO',generic:'Generic'}};
+  const original=structuredClone(source);Object.values(source).forEach(Object.freeze);Object.freeze(source);
+  const m=T.canonicalMaster(source);
+  assert.equal(m.A_NLC.group,'Soda makers');assert.equal(m.A_NLC.family,'DUO');assert.equal(m.A_NLC.generic,'Generic');
+  assert.equal(m.A_NLC.sku,'A_NLC');assert.equal(m.A_NLC.name,'Keep THIS description');assert.deepEqual(source,original);
+});
+
+test('classification filtering and group charts include every case variant without duplicating facts',()=>{
+  const facts=[{id:'1',sku:'A_NLC',date:'2026-11-18',qty:10,department:T.CFC,line:'CFC-L1'},
+    {id:'2',sku:'B_NLC',date:'2026-11-18',qty:20,department:T.CFC,line:'CFC-L2'},
+    {id:'3',sku:'C_NLC',date:'2026-11-18',qty:40,department:T.CFC,line:'CFC-L1'}];
+  const source={A_NLC:{name:'A',group:'SODA MAKERS',family:'duo',generic:'GENERIC'},B_NLC:{name:'B',group:'Soda makers',family:'DUO',generic:'Generic'},C_NLC:{name:'C',group:'Bottles',family:'Glass',generic:'Generic'}};
+  for(const group of ['SODA MAKERS','Soda makers','soda makers']){
+    const result=T.production(facts,source,{group,family:'dUo',generic:'generic'});
+    assert.equal(result.rows.length,2);assert.equal(result.units,30);assert.deepEqual(result.groups,[{label:'Soda makers',qty:30}]);
+    assert.equal(result.items[0].group,'Soda makers');assert.equal(result.items[0].family,'DUO');assert.equal(result.days[0].qty,30);
+  }
+  const all=T.production(facts,source);assert.equal(all.units,70);assert.equal(all.groups.length,2);
+  assert.equal(all.groups.reduce((sum,r)=>sum+r.qty,0),all.units);
+  assert.equal(T.production(facts,source,{group:'soda makers',line:'CFC-L1'}).units,10);
+  assert.equal(T.production(facts,source,{sku:'a_nlc'}).units,0);
+});
+
 const headers=['Internal ID','Transaction Date','Item','Quantity','Type','Built','Job','Department','Machine / Line'];
 const completion=(id,qty=25)=>[id,46327.6,'1000000001_NLC',qty,'Work Order Completion',0,'Work Order #123',T.CFC,'CFC-L1'];
 test('production uses Quantity, not Built, and preserves the date of Excel timestamps',()=>{

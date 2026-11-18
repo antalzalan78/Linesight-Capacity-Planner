@@ -72,3 +72,29 @@ test('conflicting repeated line columns cannot be applied and keep previously im
   assert.match(p.element('ct-import-preview').innerHTML,/id="ct-apply" class="add-btn" disabled/);
   await p.element('ct-apply').onclick();assert.deepEqual(p.saved(),initial);
 });
+
+test('existing mixed-case masterdata produces one filter choice and consistent chart, detail and CSV values',async()=>{
+  const initial=state();initial.stock=[];
+  initial.master.items={A_NLC:{sku:'A_NLC',name:'A source name',group:'SODA MAKERS',family:'duo',generic:'GENERIC'},
+    B_NLC:{sku:'B_NLC',name:'B source name',group:'Soda makers',family:'DUO',generic:'Generic'},
+    C_NLC:{sku:'C_NLC',name:'C source name',group:'Bottles',family:'Glass',generic:'Generic'}};
+  initial.transactions=[{id:'1',sku:'A_NLC',date:'2026-11-18',qty:10,job:'J1',department:T.CFC,line:'CFC-L1'},
+    {id:'2',sku:'B_NLC',date:'2026-11-18',qty:20,job:'J2',department:T.CFC,line:'CFC-L2'},
+    {id:'3',sku:'C_NLC',date:'2026-11-18',qty:40,job:'J3',department:T.CFC,line:'CFC-L1'}];
+  const p=await towerUI(initial);p.view('production');
+  const options=id=>[...p.html().match(new RegExp('<select id="'+id+'"[^>]*>([\\s\\S]*?)</select>'))[1].matchAll(/<option value="([^"]*)"/g)].map(m=>m[1]);
+  assert.deepEqual(options('ct-group'),['','Bottles','Soda makers']);
+  assert.deepEqual(options('ct-family'),['','DUO','Glass']);assert.deepEqual(options('ct-generic'),['','Generic']);
+  p.change('ct-group','soda makers');assert.deepEqual(options('ct-family'),['','DUO']);
+  assert.match(p.html(),/value="Soda makers" selected/);
+  p.change('ct-family','duo');p.change('ct-generic','generic');
+  const plot=p.plots.findLast(c=>!c.destroyed&&c.canvas.id==='ct-group-chart');
+  assert.deepEqual([...plot.config.data.labels],['Soda makers']);assert.deepEqual([...plot.config.data.datasets[0].data],[30]);
+  p.element('ct-export').onclick();const lines=(await p.downloads[0].text()).split('\r\n');
+  assert.equal(lines.length,3);assert.ok(lines.slice(1).every(row=>row.includes('"Soda makers","DUO"')));
+  assert.ok(lines[1].includes('"1"'));assert.ok(lines[2].includes('"2"'));
+  assert.equal(lines.slice(1).reduce((sum,row)=>sum+Number(row.split(',').at(-1)),0),30);
+  p.element('ct-reset-production').onclick();assert.deepEqual(options('ct-group'),['','Bottles','Soda makers']);
+  p.element('ct-export').onclick();assert.equal((await p.downloads[1].text()).split('\r\n').length,4);
+  assert.deepEqual(p.saved(),initial);
+});

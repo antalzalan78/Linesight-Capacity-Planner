@@ -1,5 +1,5 @@
 'use strict';
-importScripts('../vendor/xlsx.full.min.js','control-tower.js?v=20261117-2');
+importScripts('../vendor/xlsx.full.min.js','control-tower.js?v=20261118-1');
 self.onmessage=async function(event){
   try{
     const {file,kind}=event.data;

@@ -9,6 +9,21 @@
   const sku=v=>{let s=text(v).toUpperCase();if(/^\d+(?:\.0+)?$/.test(s))s=String(Number(s))+'_NLC';return s;};
   const job=v=>text(v).replace(/^Work\s*Order\s*#\s*/i,'');
   const norm=v=>text(v).toLowerCase().replace(/[\s_-]+/g,'');
+  const labelText=v=>text(v).normalize('NFC').replace(/\s+/g,' ');
+  const labelKey=v=>labelText(v).toLowerCase();
+  function labelOptions(values){
+    const labels=new Map();
+    // Reuse a source spelling, preferring mixed case; keep acronyms such as DUO intact.
+    const rank=v=>v!==v.toLowerCase()&&v!==v.toUpperCase()?0:v!==v.toLowerCase()?1:2;
+    for(const value of values){const label=labelText(value);if(!label)continue;const key=labelKey(label),old=labels.get(key);
+      if(!old||rank(label)<rank(old)||(rank(label)===rank(old)&&label.localeCompare(old,'en-GB')<0))labels.set(key,label);
+    }
+    return [...labels.values()].sort((a,b)=>a.localeCompare(b,'en-GB'));
+  }
+  function canonicalMaster(items){
+    const fields=['group','family','generic'],labels=Object.fromEntries(fields.map(field=>[field,new Map(labelOptions(Object.values(items).map(item=>item[field])).map(label=>[labelKey(label),label]))]));
+    return Object.fromEntries(Object.entries(items).map(([sku,item])=>[sku,{...item,...Object.fromEntries(fields.map(field=>[field,labels[field].get(labelKey(item[field]))||item[field]]))}]));
+  }
   function number(value){
     if(typeof value==='number')return Number.isFinite(value)?value:null;
     let s=text(value);if(!s||s==='-')return null;
@@ -46,12 +61,12 @@
       const vals=field=>[...new Set(list.map(r=>text(r[field])).filter(v=>v&&v!=='-'))];
       const fields={name:'Description',group:'Type',family:'Type 2',variant:'Type3',generic:'Generic'};
       const item={sku:key,countries:vals('Country'),conflicts:[]};
-      for(const [dest,source] of Object.entries(fields)){const v=vals(source);item[dest]=v.length===1?v[0]:v.length?'Conflicting masterdata':'Unclassified';if(v.length>1)item.conflicts.push(source);}
+      for(const [dest,source] of Object.entries(fields)){const v=dest==='name'?vals(source):labelOptions(vals(source));item[dest]=v.length===1?v[0]:v.length?'Conflicting masterdata':'Unclassified';if(v.length>1)item.conflicts.push(source);}
       const standards=[...new Set(list.map(r=>number(r.Std_Min_per_unit)).filter(v=>v>0))];item.stdMin=standards.length===1?standards[0]:null;
       if(item.conflicts.length)issues.push(key+': conflicting '+item.conflicts.join(', '));
       items[key]=item;
     }
-    return {items,sourceRows:rows.length,duplicateRows,issues};
+    return {items:canonicalMaster(items),sourceRows:rows.length,duplicateRows,issues};
   }
   function stock(matrix){
     const source=table(matrix,['Item','Location','On Hand','Available']),rows=[],issues=[];let ignoredRows=0;
@@ -131,7 +146,8 @@
     return state;
   }
   function production(records,items={},filters={}){
-    const rows=records.filter(r=> (!filters.from||r.date>=filters.from)&&(!filters.to||r.date<=filters.to)&&(!filters.department||r.department===filters.department)&&(!filters.line||r.line===filters.line)&&(!filters.group||(items[r.sku]?.group||'Unmapped')===filters.group)&&(!filters.family||(items[r.sku]?.family||'Unmapped')===filters.family)&&(!filters.generic||(items[r.sku]?.generic||'Unmapped')===filters.generic)&&(!filters.sku||r.sku===filters.sku));
+    items=canonicalMaster(items);
+    const rows=records.filter(r=> (!filters.from||r.date>=filters.from)&&(!filters.to||r.date<=filters.to)&&(!filters.department||r.department===filters.department)&&(!filters.line||r.line===filters.line)&&(!filters.group||labelKey(items[r.sku]?.group||'Unmapped')===labelKey(filters.group))&&(!filters.family||labelKey(items[r.sku]?.family||'Unmapped')===labelKey(filters.family))&&(!filters.generic||labelKey(items[r.sku]?.generic||'Unmapped')===labelKey(filters.generic))&&(!filters.sku||r.sku===filters.sku));
     const days=new Map(),lines=new Map(),groups=new Map(),skus=new Map();let units=0,unmapped=0,unmappedUnits=0,zeroRows=0;
     for(const r of rows){const category=items[r.sku]?.group||'Unmapped';units+=r.qty;if(!items[r.sku]){unmapped++;unmappedUnits+=r.qty;}if(r.qty===0)zeroRows++;
       for(const [map,key] of [[days,r.date],[lines,r.line],[groups,category],[skus,r.sku]])map.set(key,(map.get(key)||0)+r.qty);
@@ -141,5 +157,5 @@
       lines:[...lines].map(([label,qty])=>({label,qty})).sort((a,b)=>b.qty-a.qty),groups:[...groups].map(([label,qty])=>({label,qty})).sort((a,b)=>b.qty-a.qty),
       items:[...skus].map(([sku,qty])=>({sku,qty,...(items[sku]||{name:sku,group:'Unmapped',family:'Unmapped'})})).sort((a,b)=>b.qty-a.qty)};
   }
-  return {AVAILABLE,HOLD,CFC,WATCH,text,sku,job,number,date,master,stock,transactions,mergeTransactions,inventory,materialCatalog,production,lineKey,calendar,validateBackup};
+  return {AVAILABLE,HOLD,CFC,WATCH,text,sku,job,number,date,labelKey,labelOptions,canonicalMaster,master,stock,transactions,mergeTransactions,inventory,materialCatalog,production,lineKey,calendar,validateBackup};
 });

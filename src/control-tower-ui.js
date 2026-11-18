@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const T=window.LineSightTower,VERSION='20261117-2';
+  const T=window.LineSightTower,VERSION='20261118-1';
   const el=id=>document.getElementById(id);
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt=v=>v===null||v===undefined?'—':Number(v).toLocaleString('en-GB',{maximumFractionDigits:2});
@@ -26,7 +26,7 @@
   });}
   function message(text,error=false){el('ct-message').textContent=text;el('ct-message').className='ct-status'+(error?' ct-error':'');}
   function destroyCharts(){charts.forEach(c=>c.destroy());charts=[];}
-  function select(id,label,values,value){return `<label>${escape(label)}<select id="${id}" class="si"><option value="">All</option>${values.map(v=>`<option value="${escape(v)}" ${v===value?'selected':''}>${escape(v)}</option>`).join('')}</select></label>`;}
+  function select(id,label,values,value,key=v=>v){return `<label>${escape(label)}<select id="${id}" class="si"><option value="">All</option>${values.map(v=>`<option value="${escape(v)}" ${key(v)===key(value)?'selected':''}>${escape(v)}</option>`).join('')}</select></label>`;}
   const unique=values=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   const metric=(label,value,sub='')=>`<div class="metric"><div class="metric-label">${escape(label)}</div><div class="metric-val">${escape(value)}</div><div class="metric-sub">${escape(sub)}</div></div>`;
   function source(info){return info?`${escape(info.source)} · imported ${escape(new Date(info.at).toLocaleString('en-GB'))}`:'Not imported';}
@@ -97,10 +97,10 @@
   }
   function productionResult(){return T.production(data.transactions,data.master.items,filters);}
   function production(){
-    const result=productionResult(),scope=data.transactions.filter(r=>!filters.department||r.department===filters.department),master=data.master.items;
+    const result=productionResult(),scope=data.transactions.filter(r=>!filters.department||r.department===filters.department),master=T.canonicalMaster(data.master.items);
     const groups=unique(scope.map(r=>master[r.sku]?.group||'Unmapped'));
     const rows=result.rows.slice(prodPage*100,prodPage*100+100);
-    el('ct-body').innerHTML=`<div class="ct-filters"><label>From<input id="ct-from" type="date" class="ni" value="${filters.from}"></label><label>To<input id="ct-to" type="date" class="ni" value="${filters.to}"></label>${select('ct-department','Department',unique(data.transactions.map(r=>r.department)),filters.department)}${select('ct-line','Machine / line',unique(scope.map(r=>r.line)),filters.line)}${select('ct-group','Masterdata category',groups,filters.group)}${select('ct-family','Masterdata family',unique(scope.filter(r=>!filters.group||(master[r.sku]?.group||'Unmapped')===filters.group).map(r=>master[r.sku]?.family||'Unmapped')),filters.family)}${select('ct-generic','Generic',unique(scope.map(r=>master[r.sku]?.generic||'Unmapped')),filters.generic)}<label>SKU<input id="ct-sku" class="ni" placeholder="Exact item code (optional)" value="${escape(filters.sku)}"></label><button id="ct-reset-production" class="add-btn" style="margin:0;">Reset filters</button></div>
+    el('ct-body').innerHTML=`<div class="ct-filters"><label>From<input id="ct-from" type="date" class="ni" value="${filters.from}"></label><label>To<input id="ct-to" type="date" class="ni" value="${filters.to}"></label>${select('ct-department','Department',unique(data.transactions.map(r=>r.department)),filters.department)}${select('ct-line','Machine / line',unique(scope.map(r=>r.line)),filters.line)}${select('ct-group','Masterdata category',groups,filters.group,T.labelKey)}${select('ct-family','Masterdata family',unique(scope.filter(r=>!filters.group||T.labelKey(master[r.sku]?.group||'Unmapped')===T.labelKey(filters.group)).map(r=>master[r.sku]?.family||'Unmapped')),filters.family,T.labelKey)}${select('ct-generic','Generic',unique(scope.map(r=>master[r.sku]?.generic||'Unmapped')),filters.generic,T.labelKey)}<label>SKU<input id="ct-sku" class="ni" placeholder="Exact item code (optional)" value="${escape(filters.sku)}"></label><button id="ct-reset-production" class="add-btn" style="margin:0;">Reset filters</button></div>
     <div class="ct-source">${source(data.imports.transactions)}. ${result.rows.length?'':'No completion records match this selection; this is not evidence of zero production. '}Actual production uses Quantity on Work Order Completion records, keyed by Internal ID. CFC is the default department; GAS remains available through the department filter. The latest source day may be incomplete.</div>
     ${!data.transactions.length?'<div class="card ct-empty">Import Transactions.xlsx in ERP imports.</div>':`
     <div class="metrics-strip">${metric('Production quantity',fmt(result.units),'ERP source units')}${metric('Completion records',fmt(result.rows.length))}${metric('Work orders',fmt(result.jobs))}${metric('Produced SKUs',fmt(result.skus))}${metric('Unmapped records',fmt(result.unmapped),fmt(result.unmappedUnits)+' quantity without masterdata')}${metric('Zero-quantity records',fmt(result.zeroRows),'retained, not counted as produced units')}</div>
@@ -165,7 +165,7 @@
   function exportView(){
     let rows;
     if(view==='materials')rows=[['Snapshot date','SKU','Description','Category','Family','Available 3PL','Available WIP CFC','Available in transit','Total available','HOLD on hand','Minimum','Status'],...inventoryRows().map(r=>[currentSnapshot().date,r.sku,r.name,r.category,r.family,r.warehouse,r.wip,r.transit,r.available,r.blocked,r.minimum,r.status])];
-    else if(view==='production')rows=[['Internal ID','Transaction date','Work order','SKU','Machine / Line','Department','Master category','Family','Quantity'],...productionResult().rows.map(r=>[r.id,r.date,r.job,r.sku,r.line,r.department,data.master.items[r.sku]?.group||'Unmapped',data.master.items[r.sku]?.family||'Unmapped',r.qty])];
+    else if(view==='production'){const master=T.canonicalMaster(data.master.items);rows=[['Internal ID','Transaction date','Work order','SKU','Machine / Line','Department','Master category','Family','Quantity'],...productionResult().rows.map(r=>[r.id,r.date,r.job,r.sku,r.line,r.department,master[r.sku]?.group||'Unmapped',master[r.sku]?.family||'Unmapped',r.qty])];}
     else{message('Select Strategic materials or Daily production to export the filtered data.');return;}
     download('linesight-'+view+'-'+today()+'.csv','\uFEFF'+csv(rows),'text/csv;charset=utf-8');
   }
