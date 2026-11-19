@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const T=window.LineSightTower,VERSION='20261118-3';
+  const T=window.LineSightTower,VERSION='20261119-1';
   const el=id=>document.getElementById(id);
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt=v=>v===null||v===undefined?'—':Number(v).toLocaleString('en-GB',{maximumFractionDigits:2});
@@ -10,7 +10,7 @@
   let data=empty(),view='materials',pending=null,db=null,loaded=false,busy=false,charts=[],selection='',prodPage=0;
   let filters={category:'',search:'',from:'',to:'',department:T.CFC,line:'',group:'',family:'',generic:'',sku:''};
   let stockDate='',stockScope='all',materialPage=0;
-  const button=document.createElement('button');button.className='tab';button.textContent='Control Tower';button.onclick=()=>switchTab('tower');
+  const button=document.createElement('button');button.className='tab';button.dataset.panel='tower';button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V7l6 3V4l6 3v14M3 21h18V11l-6 3M7 15h1M7 18h1M11 12h1M11 16h1M18 18h1"/></svg><span>Control Tower</span>';button.onclick=()=>switchTab('tower');
   document.querySelector('.tabs').appendChild(button);
   const panel=document.createElement('div');panel.className='view-panel';panel.id='panel-tower';
   panel.innerHTML=`<div class="ct-toolbar"><div class="ct-tabs" role="tablist" aria-label="Control Tower views"><button class="add-btn" data-view="materials" role="tab">Strategic materials</button><button class="add-btn" data-view="explorer" role="tab">Stock explorer</button><button class="add-btn" data-view="production" role="tab">Daily production</button><button class="add-btn" data-view="imports" role="tab">ERP imports</button></div><div class="ct-actions"><button class="add-btn" id="ct-export" style="margin:0;">Export this view</button><button class="add-btn" id="ct-backup" style="margin:0;">Download ERP backup</button></div></div><div id="ct-message" class="ct-status" role="status"></div><div id="ct-body"></div>`;
@@ -34,7 +34,7 @@
   function stockValueLabels(groups){return {id:'linesight-stock-values',afterDatasetsDraw(plot){
     if(!plot.isDatasetVisible(0))return;
     const {ctx,chartArea}=plot,bars=plot.getDatasetMeta(0).data,targets=plot.isDatasetVisible(1)?plot.getDatasetMeta(1).data:[],fontSize=plot.width<600?11:12;
-    ctx.save();ctx.font='600 '+fontSize+'px "IBM Plex Mono", monospace';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillStyle='#243b53';ctx.strokeStyle='#ffffff';ctx.lineWidth=4;ctx.lineJoin='round';
+    ctx.save();ctx.font='700 '+fontSize+'px "Century Gothic", "Segoe UI", sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillStyle='#002248';ctx.strokeStyle='#ffffff';ctx.lineWidth=4;ctx.lineJoin='round';
     plot.data.datasets[0].data.forEach((value,index)=>{
       const bar=bars[index];
       if(typeof value!=='number'||!Number.isFinite(value)||!bar||bar.skip||![bar.x,bar.y,bar.base].every(Number.isFinite))return;
@@ -50,7 +50,7 @@
   }};}
   function chart(id,type,labels,datasets,extra={},localPlugins=[]){
     if(!window.Chart){el(id).parentElement.innerHTML='<div class="ct-empty">Chart library unavailable. The table and exports still show the data.</div>';return;}
-    charts.push(new Chart(el(id),{type,plugins:localPlugins,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{labels:{color:'#506176',font:{size:12}}}},scales:{x:{grid:{color:'#eaf0f6'},ticks:{color:'#506176',font:{size:11}}},y:{beginAtZero:true,grid:{color:'#eaf0f6'},ticks:{color:'#506176',font:{size:11}}}},...extra}}));
+    charts.push(new Chart(el(id),{type,plugins:localPlugins,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{labels:{color:'#4b5d70',font:{size:12}}}},scales:{x:{grid:{color:'#eaf0f6'},ticks:{color:'#4b5d70',font:{size:11}}},y:{beginAtZero:true,grid:{color:'#eaf0f6'},ticks:{color:'#4b5d70',font:{size:11}}}},...extra}}));
   }
   function render(){
     if(!el('ct-body'))return;destroyCharts();
@@ -95,9 +95,9 @@
     }
     if(!snapshot)return;
     for(const p of results)if(p.groups.length)chart('ct-monitor-chart-'+p.id,'bar',p.groups.map(g=>g.name),[
-      {label:'Available stock',data:p.groups.map(g=>g.available),backgroundColor:p.groups.map(g=>!g.complete?'#b58223':g.available<=0?'#bd363a':g.gap===null?'#2466ad':g.gap<0?'#bd363a':'#08775a'),maxBarThickness:60,order:1},
+      {label:'Available stock',data:p.groups.map(g=>g.available),backgroundColor:p.groups.map(g=>!g.complete?'#b58223':g.available<=0?'#bd363a':g.gap===null?'#015aab':g.gap<0?'#bd363a':'#08775a'),maxBarThickness:60,order:1},
       {label:'Safety stock',type:'line',data:p.groups.map(g=>g.safetyStock),showLine:false,pointStyle:'line',pointRadius:14,pointHoverRadius:16,borderWidth:3,borderColor:'#946000',backgroundColor:'#946000',order:0}
-    ],{layout:{padding:{top:14}},plugins:{legend:{labels:{color:'#506176',font:{size:12},usePointStyle:true}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.raw)+(ctx.datasetIndex===0&&!p.groups[ctx.dataIndex].complete?' (partial; missing items)':'')}}},scales:{x:{grid:{display:false},ticks:{color:'#506176',autoSkip:false,maxRotation:45,minRotation:0}},y:{beginAtZero:true,grace:'15%',ticks:{color:'#506176'},grid:{color:'#eaf0f6'}}}},[stockValueLabels(p.groups)]);
+    ],{layout:{padding:{top:14}},plugins:{legend:{labels:{color:'#4b5d70',font:{size:12},usePointStyle:true}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.raw)+(ctx.datasetIndex===0&&!p.groups[ctx.dataIndex].complete?' (partial; missing items)':'')}}},scales:{x:{grid:{display:false},ticks:{color:'#4b5d70',autoSkip:false,maxRotation:45,minRotation:0}},y:{beginAtZero:true,grace:'15%',ticks:{color:'#4b5d70'},grid:{color:'#eaf0f6'}}}},[stockValueLabels(p.groups)]);
   }
   function explorer(){
     const snapshot=currentSnapshot(),rows=inventoryRows(),tracked=new Set(data.watch.map(r=>r.sku)),perItemChart=!!filters.category&&rows.length<=40;
@@ -170,9 +170,9 @@
     panel.querySelectorAll('[data-prod-sku]').forEach(b=>b.onclick=()=>{filters.sku=b.dataset.prodSku;prodPage=0;render();});
     el('ct-prev').onclick=()=>{prodPage=Math.max(0,prodPage-1);render();};el('ct-next').onclick=()=>{prodPage++;render();};
     const daily=T.calendar(result.days,filters.from,filters.to);let cumulative=0;
-    chart('ct-daily-chart','bar',daily.map(r=>r.date),[{label:'Actual quantity',data:daily.map(r=>r.qty),backgroundColor:'#2466ad'}]);
+    chart('ct-daily-chart','bar',daily.map(r=>r.date),[{label:'Actual quantity',data:daily.map(r=>r.qty),backgroundColor:'#015aab'}]);
     chart('ct-line-chart','bar',result.lines.map(r=>r.label),[{label:'Actual quantity',data:result.lines.map(r=>r.qty),backgroundColor:'#08775a'}],{indexAxis:'y'});
-    chart('ct-cumulative-chart','line',daily.map(r=>r.date),[{label:'Cumulative actual',data:daily.map(r=>r.qty===null?null:cumulative+=r.qty),borderColor:'#2466ad',backgroundColor:'#eaf0f6',pointRadius:daily.length>60?0:3,spanGaps:false,fill:true}]);
+    chart('ct-cumulative-chart','line',daily.map(r=>r.date),[{label:'Cumulative actual',data:daily.map(r=>r.qty===null?null:cumulative+=r.qty),borderColor:'#015aab',backgroundColor:'#eaf0f6',pointRadius:daily.length>60?0:3,spanGaps:false,fill:true}]);
     chart('ct-group-chart','bar',result.groups.map(r=>r.label),[{label:'Actual quantity',data:result.groups.map(r=>r.qty),backgroundColor:'#08775a'}],{indexAxis:'y'});
   }
   function imports(){

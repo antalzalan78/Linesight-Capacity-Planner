@@ -12,7 +12,8 @@ function planner(){
   function element(id=''){
     if(elements.has(id))return elements.get(id);
     const el={value:({shifts:2,shiftlen:8,oee:100,days:5})[id]??'',style:{},dataset:{},
-      textContent:'',innerHTML:'',classList:{add(){},remove(){},toggle(){}},
+      textContent:'',innerHTML:'',attributes:{},classList:{add(){},remove(){},toggle(){},contains(){return false;}},
+      setAttribute(name,value){this.attributes[name]=String(value);},
       addEventListener(){},appendChild(){},contains(){return false;},focus(){},getAttribute(){return null;},rows:[],
       createTHead(){this.head=element(Symbol());return this.head;},createTBody(){this.body=element(Symbol());return this.body;},
       insertRow(){const row=element(Symbol());this.rows.push(row);return row;},getContext(){return {};}};
@@ -22,7 +23,7 @@ function planner(){
     setTimeout:()=>1,clearTimeout(){},alert(){},confirm:()=>true,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     document:{getElementById:element,querySelector:element,querySelectorAll:()=>[],
-      createElement:()=>element(Symbol()),addEventListener(){},activeElement:null},window:{},fetch:()=>{throw Error('Unexpected network request');}});
+      createElement:()=>element(Symbol()),addEventListener(){},activeElement:null,body:element('body')},window:{addEventListener(){}},fetch:()=>{throw Error('Unexpected network request');}});
   vm.runInContext(fs.readFileSync(path.join(root,'src','calculations.js'),'utf8'),context);
   vm.runInContext(fs.readFileSync(path.join(root,'src','production.js'),'utf8'),context);
   vm.runInContext(script.slice(0,script.lastIndexOf("document.getElementById('footer-date')")),context);

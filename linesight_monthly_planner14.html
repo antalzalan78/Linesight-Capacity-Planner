@@ -9,20 +9,20 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./src/calculations.js?v=cb6c69b40ffe"></script>
 <script src="./src/production.js?v=5bc41f75a050"></script>
-<script src="./src/control-tower.js?v=20261118-3"></script>
-<link rel="stylesheet" href="./src/control-tower.css?v=20261118-3">
+<script src="./src/control-tower.js?v=20261119-1"></script>
+<link rel="stylesheet" href="./src/control-tower.css?v=20261119-1">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 :root{
   color-scheme:light;
-  --bg:#f2f5f9;--bg2:#ffffff;--bg3:#eaf0f6;--border:#cbd5e1;
-  --text:#18283b;--text2:#506176;
+  --bg:#f4f1ec;--bg2:#ffffff;--bg3:#eef2f6;--border:#dce2e8;
+  --text:#002248;--text2:#4b5d70;
   --green:#08775a;--green-l:#066349;--green-bg:#e4f4ed;
-  --blue:#2466ad;--blue-l:#1d5794;
+  --blue:#015aab;--blue-l:#0b4f94;--navy:#002248;--light-blue:#7ebff4;
   --yellow:#946000;--yellow-bg:#fff4d8;
   --red:#bd363a;--red-bg:#fdebed;
-  --focus:rgba(8,119,90,0.22);--shadow:0 2px 8px rgba(24,40,59,0.045);
-  --r:8px;--font:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
+  --focus:rgba(1,90,171,0.18);--shadow:0 2px 5px rgba(0,34,72,0.04);
+  --r:12px;--font:'Century Gothic','Aptos','Segoe UI',sans-serif;--mono:'IBM Plex Mono',monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;padding:1.5rem 2rem 3rem;}
@@ -176,37 +176,51 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 #report-view .good{color:#047857;}
 #report-view img{max-width:100%;margin-top:6px;}
 </style>
+<link rel="stylesheet" href="./src/planner-theme.css?v=20261119-1">
 </head>
 <body>
 
+<a class="skip-link" href="#planner-view-title">Skip to workspace</a>
+<aside class="planner-rail" id="planner-rail" aria-label="Planner navigation">
+  <div class="rail-brand"><span class="rail-mark" aria-hidden="true">LS</span><div><span class="rail-wordmark">LineSight</span><span class="rail-subtitle">Monthly Capacity Planner</span></div></div>
+  <nav class="tabs" aria-label="Planner views">
+    <div class="nav-group-label">Planning</div>
+    <button class="tab active" data-panel="weekly" aria-current="page" onclick="switchTab('weekly')"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h2M14 15h2"/></svg><span>Weekly View</span></button>
+    <button class="tab" data-panel="mps" onclick="switchTab('mps')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16M8 7h12M8 12h8M8 17h10"/></svg><span>MPS</span></button>
+    <button class="tab" data-panel="monthly" onclick="switchTab('monthly')"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M9 10v11M15 10v11M3 15h18"/></svg><span>Monthly Summary</span></button>
+    <button class="tab" data-panel="backlog" onclick="switchTab('backlog')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg><span>Backlog Analysis</span></button>
+    <div class="nav-group-label">Resources &amp; insights</div>
+    <button class="tab" data-panel="demand" onclick="switchTab('demand')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5v8l-9 5-9-5V8l9-5Zm0 10v8M3 8l9 5 9-5M8 5l9 5"/></svg><span>Product Groups</span></button>
+    <button class="tab" data-panel="headcount" onclick="switchTab('headcount')"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-4-5"/></svg><span>Headcount</span></button>
+    <button class="tab" data-panel="chart" onclick="switchTab('chart')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18h17M8 16v-5M13 16V6M18 16v-8"/></svg><span>Charts</span></button>
+    <button class="tab" data-panel="scenarios" onclick="switchTab('scenarios')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span>Scenarios</span></button>
+    <div class="nav-group-label">Operations</div>
+  </nav>
+  <div class="rail-note"><span>CAPACITY · PEOPLE · PRODUCTION</span><p>Plan with clarity.</p></div>
+</aside>
+<button class="nav-scrim" id="nav-scrim" aria-label="Close navigation" onclick="closePlannerNavigation()" tabindex="-1"></button>
 <div class="header">
   <div class="header-left">
+    <button id="nav-toggle" class="nav-btn" onclick="togglePlannerNavigation()" aria-label="Toggle navigation" aria-controls="planner-rail" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
     <span class="logo">LineSight</span>
     <span style="color:var(--border);font-size:18px;">|</span>
-    <span class="header-title">Monthly Capacity Planner</span>
+    <span class="header-title" id="nav-current-view">Weekly View</span>
   </div>
   <div class="header-actions">
     <button id="auth-btn" onclick="openAuth()" class="nav-btn" title="Sign in for secure cloud sync" style="font-family:var(--mono);font-size:11px;">○ Local mode · Sign in</button>
     <div class="month-nav">
-      <button class="nav-btn" onclick="changeMonth(-1)">&#8592;</button>
+      <button class="nav-btn" onclick="changeMonth(-1)" aria-label="Previous month">&#8592;</button>
       <span class="month-label" id="month-label"></span>
-      <button class="nav-btn" onclick="changeMonth(1)">&#8594;</button>
+      <button class="nav-btn" onclick="changeMonth(1)" aria-label="Next month">&#8594;</button>
     </div>
   </div>
 </div>
 
+<section class="planner-hero" aria-labelledby="planner-view-title">
+  <div><div class="planner-kicker">Operations planning workspace</div><h1 id="planner-view-title" tabindex="-1">Weekly capacity overview</h1><p id="planner-view-description">Balance line capacity, demand and working time across the month.</p></div>
+  <span class="planner-view-tag" id="planner-view-tag">Capacity planning</span>
+</section>
 <div class="metrics-strip" id="metrics-strip"></div>
-
-<div class="tabs">
-  <button class="tab active" onclick="switchTab('weekly')">Weekly View</button>
-  <button class="tab"        onclick="switchTab('mps')">MPS</button>
-  <button class="tab"        onclick="switchTab('monthly')">Monthly Summary</button>
-  <button class="tab"        onclick="switchTab('backlog')">Backlog Analysis</button>
-  <button class="tab"        onclick="switchTab('demand')">Product Groups</button>
-  <button class="tab"        onclick="switchTab('headcount')">Headcount</button>
-  <button class="tab"        onclick="switchTab('chart')">Charts</button>
-  <button class="tab"        onclick="switchTab('scenarios')">Scenarios</button>
-</div>
 
 <!-- ══ WEEKLY ══ -->
 <div class="view-panel active" id="panel-weekly">
@@ -345,7 +359,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
         </div>
         <div style="overflow-x:auto;max-height:420px;overflow-y:auto;"><table class="gt" id="mps-batch-table"></table></div>
         <div class="divider"></div>
-        <div style="display:grid;grid-template-columns:130px 80px 120px 1fr 76px auto;gap:8px;align-items:center;">
+        <div class="mps-add-batch">
           <input type="date" id="mb-date" class="ni" style="color-scheme:light;">
           <select id="mb-line" class="si"></select>
           <input type="text" id="mb-job" class="ni" placeholder="Job no. (opt.)">
@@ -360,7 +374,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
     <p class="info-text">Net units by actual transaction date, including retained unmatched jobs and dated manual corrections. Undated actuals are excluded until a date is supplied.</p>
     <div style="overflow:auto;max-height:240px;"><table class="gt" id="production-daily-table"></table></div>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1.25rem;align-items:start;">
+  <div class="mps-import-panels">
     <div class="card">
       <div class="section-label">MPS import (Excel / CSV)</div>
       <p class="info-text">Load your daily batch plan from Excel. Pick the file, check the auto-detected column mapping (date · line · SKU · quantity), then apply. Batches of the imported months replace the existing ones; other months stay untouched.</p>
@@ -884,6 +898,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 // ════════════════════════════════
 // CONSTANTS
 // ════════════════════════════════
+if(window.Chart?.defaults){window.Chart.defaults.font.family="'Century Gothic', 'Aptos', 'Segoe UI', sans-serif";window.Chart.defaults.font.size=12;window.Chart.defaults.color='#4b5d70';}
 const PGS = [
   {key:'soda',   label:'Soda maker', color:'#1D9E75'},
   {key:'bottle', label:'Bottle',     color:'#378ADD'},
@@ -1586,10 +1601,10 @@ function renderHeadcount(){
       ]
     },
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#506176',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      plugins:{legend:{labels:{color:'#4b5d70',font:{size:12,family:'Century Gothic'},boxWidth:12}}},
       scales:{
-        x:{stacked:true,ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}},
-        y:{stacked:true,ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'},title:{display:true,text:'labor hrs',color:'#506176',font:{size:10}}}
+        x:{stacked:true,ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{display:false}},
+        y:{stacked:true,ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{color:'rgba(24,40,59,0.10)'},title:{display:true,text:'labor hrs',color:'#4b5d70',font:{size:10}}}
       }}
   });
 
@@ -1609,10 +1624,10 @@ function renderHeadcount(){
       ]
     },
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#506176',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      plugins:{legend:{labels:{color:'#4b5d70',font:{size:12,family:'Century Gothic'},boxWidth:12}}},
       scales:{
-        y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
-        x:{ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+        y:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{color:'rgba(24,40,59,0.10)'}},
+        x:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{display:false}}
       }}
   });
 }
@@ -1868,8 +1883,8 @@ function renderBacklog(){
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{
-        y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
-        x:{ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+        y:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{color:'rgba(24,40,59,0.10)'}},
+        x:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{display:false}}
       }}
   });
 
@@ -1895,10 +1910,10 @@ function renderBacklog(){
         borderColor:'#1D9E75',backgroundColor:'transparent',borderWidth:2,pointRadius:4,borderDash:[4,3]},
     ]},
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#506176',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}},
+      plugins:{legend:{labels:{color:'#4b5d70',font:{size:12,family:'Century Gothic'},boxWidth:12}}},
       scales:{
-        y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
-        x:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}
+        y:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{color:'rgba(24,40,59,0.10)'}},
+        x:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{display:false}}
       }}
   });
 }
@@ -1947,13 +1962,38 @@ function delCalEvent(k){ delete calEvents[k]; render(); }
 // NAV & TABS
 // ════════════════════════════════
 function changeMonth(d){ curDate.setMonth(curDate.getMonth()+d); render(); }
+const plannerViews={
+  weekly:['Weekly View','Weekly capacity overview','Balance line capacity, demand and working time across the month.','Capacity planning'],
+  mps:['MPS','Master production schedule','Sequence batches, balance daily loads and track plan versus actual production.','Production planning'],
+  monthly:['Monthly Summary','Monthly capacity outlook','Review capacity and demand by product group across your planning horizon.','Capacity planning'],
+  backlog:['Backlog Analysis','Backlog & recovery','Follow unfinished demand and identify capacity for recovery by product group.','Demand & capacity'],
+  demand:['Product Groups','Product groups & demand','Manage product-group demand and the assumptions behind your capacity plan.','Planning masterdata'],
+  headcount:['Headcount','Workforce & coverage','Compare operator availability with the labour needed to run your plan.','People planning'],
+  chart:['Charts','Planning performance','Explore capacity, utilisation, backlog and production adherence.','Performance insights'],
+  scenarios:['Scenarios','Compare your options','Evaluate alternative capacity and workforce plans before making changes.','Scenario planning'],
+  tower:['Control Tower','Operations Control Tower','Monitor strategic materials and daily production from your ERP exports.','Materials & production']
+};
+function plannerNavigationNarrow(){return typeof window.matchMedia==='function'&&window.matchMedia('(max-width:1100px)').matches;}
+function syncPlannerNavigation(){
+  const copy=plannerViews[activeTab]||plannerViews.weekly;
+  ['nav-current-view','planner-view-title','planner-view-description','planner-view-tag'].forEach((id,i)=>document.getElementById(id).textContent=copy[i]);
+  document.querySelectorAll('.tabs .tab').forEach(button=>{const current=button.dataset.panel===activeTab;button.classList.toggle('active',current);button.setAttribute('aria-current',current?'page':'false');});
+  const classes=document.body?.classList,narrow=plannerNavigationNarrow(),open=narrow?!!classes?.contains('nav-open'):!classes?.contains('nav-collapsed');
+  document.getElementById('nav-toggle').setAttribute?.('aria-expanded',String(open));
+  const rail=document.getElementById('planner-rail');rail.inert=narrow&&!open;
+}
+function togglePlannerNavigation(){
+  document.body.classList.toggle(plannerNavigationNarrow()?'nav-open':'nav-collapsed');syncPlannerNavigation();
+}
+function closePlannerNavigation(){document.body?.classList.remove('nav-open');syncPlannerNavigation();}
 function switchTab(name){
   activeTab=name;
-  ['weekly','mps','monthly','backlog','demand','headcount','chart','scenarios','tower'].forEach((n,i)=>
-    document.querySelectorAll('.tab')[i].classList.toggle('active',n===name));
+  closePlannerNavigation();
   document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
   render();
+  window.scrollTo?.({top:0,behavior:'instant'});
+  if(plannerNavigationNarrow())document.getElementById('planner-view-title').focus({preventScroll:true});
 }
 
 // ════════════════════════════════
@@ -2214,7 +2254,7 @@ function renderDemandView(){
         borderWidth:1
       }]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:'right',labels:{color:'#506176',font:{size:11,family:'IBM Plex Mono'},boxWidth:12}}}}
+        plugins:{legend:{position:'right',labels:{color:'#4b5d70',font:{size:12,family:'Century Gothic'},boxWidth:12}}}}
     });
   }
 }
@@ -2264,8 +2304,8 @@ function renderMonthlyTable(){
       {label:'Igény',    data:dA,backgroundColor:'rgba(55,138,221,0.4)',borderColor:'#378ADD',borderWidth:1},
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
-              x:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}}}
+      scales:{y:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{color:'rgba(24,40,59,0.10)'}},
+              x:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{display:false}}}}
   });
 }
 
@@ -2420,8 +2460,8 @@ function renderCharts(){
       legend:{display:false},
       tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${hu(c.raw)}`}}
     },scales:{
-      y:{beginAtZero:true,ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'},callback:v=>hu(v)},grid:{color:'rgba(24,40,59,0.10)'}},
-      x:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'},maxRotation:35,minRotation:0},grid:{display:false}}
+      y:{beginAtZero:true,ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'},callback:v=>hu(v)},grid:{color:'rgba(24,40,59,0.10)'}},
+      x:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'},maxRotation:35,minRotation:0},grid:{display:false}}
     }}
   });
 
@@ -2434,9 +2474,9 @@ function renderCharts(){
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{
-        y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
-        y2:{position:'right',min:0,max:120,ticks:{color:'#946000',font:{size:10,family:'IBM Plex Mono'},callback:v=>v+'%'},grid:{display:false}},
-        x:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{display:false}}
+        y:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{color:'rgba(24,40,59,0.10)'}},
+        y2:{position:'right',min:0,max:120,ticks:{color:'#946000',font:{size:12,family:'Century Gothic'},callback:v=>v+'%'},grid:{display:false}},
+        x:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{display:false}}
       }}
   });
 
@@ -2452,8 +2492,8 @@ function renderCharts(){
       backgroundColor:pgColors.map(c=>c+'99'),borderColor:pgColors,borderWidth:1}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{
-        x:{min:0,max:120,ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'},callback:v=>v+'%'},grid:{color:'rgba(24,40,59,0.10)'}},
-        y:{ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}
+        x:{min:0,max:120,ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'},callback:v=>v+'%'},grid:{color:'rgba(24,40,59,0.10)'}},
+        y:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{display:false}}
       }}
   });
 }
@@ -2912,8 +2952,8 @@ function renderScenarios(){
       {label:'Demand',  data:cols.map(c=>c.metrics.dem),backgroundColor:'rgba(55,138,221,0.4)',borderColor:'#378ADD',borderWidth:1},
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{ticks:{color:'#506176',font:{size:10,family:'IBM Plex Mono'}},grid:{color:'rgba(24,40,59,0.10)'}},
-              x:{ticks:{color:'#506176',font:{size:11,family:'IBM Plex Mono'}},grid:{display:false}}}}
+      scales:{y:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{color:'rgba(24,40,59,0.10)'}},
+              x:{ticks:{color:'#4b5d70',font:{size:12,family:'Century Gothic'}},grid:{display:false}}}}
   });
 }
 
@@ -4569,6 +4609,7 @@ document.addEventListener('beforeinput',e=>{
 },true);
 function render(){
   const focus=focusSnapshot();
+  syncPlannerNavigation();
   document.getElementById('metrics-strip').style.display=activeTab==='tower'?'none':'';
   const monthNav=document.querySelector('.month-nav');if(monthNav)monthNav.style.display=activeTab==='tower'?'none':'';
   document.querySelectorAll('.footer button[onclick="undoPlan()"],.footer button[onclick="openHistory()"],.footer button[onclick="printReport()"],.footer button[onclick="resetData()"],.footer #ai-btn').forEach(b=>b.style.display=activeTab==='tower'?'none':'inline-flex');
@@ -4627,6 +4668,8 @@ document.getElementById('days').addEventListener('input',function(){
   }
 })();
 
+window.addEventListener('resize',syncPlannerNavigation);
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open')){closePlannerNavigation();document.getElementById('nav-toggle').focus();}});
 document.getElementById('footer-date').textContent=new Date().toLocaleDateString('en-GB');
 loadVersions();
 load();
@@ -4638,6 +4681,6 @@ initAuth().then(()=>{
   else if(syncCfg.enabled) setSyncStatus('○ local mode — sign in to sync');
 });
 </script>
-<script src="./src/control-tower-ui.js?v=20261118-3"></script>
+<script src="./src/control-tower-ui.js?v=20261119-1"></script>
 </body>
 </html>
