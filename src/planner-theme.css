@@ -81,6 +81,23 @@ input[type=range]::-moz-range-thumb{background:var(--blue);width:16px;height:16p
 .mps-add-batch{display:grid;grid-template-columns:130px 80px 120px minmax(80px,1fr) 76px auto;gap:8px;align-items:center;}
 .mps-import-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start;}
 .mps-import-panels>.card{min-width:0;}
+.hub-section{margin-top:28px;scroll-margin-top:90px;}
+.hub-intro{display:flex;align-items:center;justify-content:space-between;gap:20px;}
+.hub-intro h2,.hub-section-heading h2{font-size:19px;font-weight:700;margin:0 0 7px;}
+.hub-intro p{font-size:13px;line-height:1.7;color:var(--text2);max-width:700px;}
+.hub-jump{display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;max-width:300px;}.hub-jump .add-btn{margin:0;}
+.hub-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+.hub-storage{padding:5px 10px;border-radius:6px;background:#e8f0fa;color:#0b4f94;font-size:11px;font-weight:700;}
+.hub-storage.hub-local{background:#fff4d8;color:#7a5710;}
+.hub-import-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start;}
+.hub-import-grid>.card{margin:0;min-width:0;}#demand-import-card{grid-column:1/-1;}
+.hub-current{padding:12px 16px;background:#eef4f9;border:1px solid #d6e2ee;border-radius:9px;margin-bottom:16px;font-size:12px;line-height:1.7;color:var(--text2);}
+.hub-shortcut{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;border:1px solid var(--border);border-radius:10px;background:#eef4f9;margin-bottom:20px;}
+.hub-shortcut p{font-size:12px;color:var(--text2);}.hub-shortcut .add-btn{margin:0;flex:none;}
+#datahub-erp-imports .ct-import-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));}
+#datahub-erp-imports input[type=file]{display:block;max-width:100%;font-size:12px;margin:12px 0;}
+.hub-backup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start;}.hub-backup-grid .card{min-width:0;}
+@media(max-width:1000px){.hub-intro{align-items:start;flex-direction:column;}.hub-jump{max-width:none;}.hub-import-grid,.hub-backup-grid{grid-template-columns:1fr;}.hub-shortcut{align-items:start;flex-wrap:wrap;}}
 .footer{margin-top:28px;padding-top:18px;font-family:var(--font);font-size:12px;line-height:1.6;}
 .footer .nav-btn{font-family:var(--font)!important;font-size:12px!important;}
 #panel-tower{font-size:14px;}

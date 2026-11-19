@@ -165,6 +165,7 @@ test('custom items can be added with manual safety stock without altering the so
 
 test('importing a private monitor setup preserves stock, masterdata and production records',async()=>{
   const input=state(),p=await towerUI(input);fields(p,T.defaultMonitors(watch));
+  p.view('imports');
   const incoming=T.updateMonitor(T.defaultMonitors(watch),'glass',[{id:'g1',safetyStock:250}]);
   await p.element('ct-import-monitors').onchange({target:{files:[{text:async()=>JSON.stringify({kind:'linesight-monitor-setup',version:1,monitors:incoming})}]}});
   assert.deepEqual(p.saved(),input);assert.match(p.element('ct-monitor-import-preview').innerHTML,/Apply monitor setup/);

@@ -4,7 +4,7 @@ const vm=require('node:vm');
 const T=require('../../src/control-tower.js');
 
 // Exercise the actual UI handlers without reading or writing browser/user storage.
-async function towerUI(initial,{failWrite=false}={}){
+async function towerUI(initial,{failWrite=false,openDataHub}={}){
   let saved=initial?structuredClone(initial):undefined;
   const elements=new Map(),downloads=[],plots=[];
   const tabs=['materials','explorer','production','imports'].map(view=>({dataset:{view},setAttribute(){}}));
@@ -23,6 +23,7 @@ async function towerUI(initial,{failWrite=false}={}){
     return tx;
   }};
   const window={LineSightTower:T,Chart:true};
+  if(openDataHub)window.openDataHub=openDataHub;
   const context=vm.createContext({console,Date,Math,Map,Set,JSON,Blob,queueMicrotask,
     document:{createElement:()=>element(Symbol()),querySelector:element,getElementById:element},window,
     indexedDB:{open(){const req={result:db};queueMicrotask(()=>req.onsuccess?.());return req;}},
@@ -33,7 +34,7 @@ async function towerUI(initial,{failWrite=false}={}){
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','..','src','control-tower-ui.js'),'utf8'),context);
   const flush=()=>new Promise(resolve=>setImmediate(resolve));await flush();
-  return {element,tabs,inputs,downloads,plots,flush,saved:()=>saved,html:()=>element('ct-body').innerHTML,
+  return {element,tabs,inputs,downloads,plots,flush,api:window.LineSightTowerUI,saved:()=>saved,html:()=>element('ct-body').innerHTML,hubHtml:()=>element('datahub-erp-imports').innerHTML,
     view:kind=>tabs.find(t=>t.dataset.view===kind).onclick(),
     change:(id,value)=>{element(id).value=value;element(id).onchange({target:{value}});}};
 }

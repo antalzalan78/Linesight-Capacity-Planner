@@ -9,8 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./src/calculations.js?v=cb6c69b40ffe"></script>
 <script src="./src/production.js?v=5bc41f75a050"></script>
-<script src="./src/control-tower.js?v=20261119-1"></script>
-<link rel="stylesheet" href="./src/control-tower.css?v=20261119-1">
+<script src="./src/control-tower.js?v=20261119-2"></script>
+<link rel="stylesheet" href="./src/control-tower.css?v=20261119-2">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 :root{
@@ -176,7 +176,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 #report-view .good{color:#047857;}
 #report-view img{max-width:100%;margin-top:6px;}
 </style>
-<link rel="stylesheet" href="./src/planner-theme.css?v=20261119-1">
+<link rel="stylesheet" href="./src/planner-theme.css?v=20261119-2">
 </head>
 <body>
 
@@ -195,6 +195,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
     <button class="tab" data-panel="chart" onclick="switchTab('chart')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18h17M8 16v-5M13 16V6M18 16v-8"/></svg><span>Charts</span></button>
     <button class="tab" data-panel="scenarios" onclick="switchTab('scenarios')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span>Scenarios</span></button>
     <div class="nav-group-label">Operations</div>
+    <button class="tab" data-panel="datahub" onclick="switchTab('datahub')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M4 14v6a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6"/></svg><span>Data Hub</span></button>
   </nav>
   <div class="rail-note"><span>CAPACITY · PEOPLE · PRODUCTION</span><p>Plan with clarity.</p></div>
 </aside>
@@ -223,6 +224,11 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 <div class="metrics-strip" id="metrics-strip"></div>
 
 <!-- ══ WEEKLY ══ -->
+<div class="view-panel" id="panel-datahub">
+  <div class="hub-intro card"><div><h2>One place for every upload</h2><p>Choose the source below, review the preview and apply only the changes you want. No file is uploaded automatically when you open this menu.</p></div><div class="hub-jump"><button class="add-btn" onclick="openDataHub('planning')">Planning data</button><button class="add-btn" onclick="openDataHub('erp')">ERP reports</button><button class="add-btn" onclick="openDataHub('settings')">Backups &amp; setup</button></div></div>
+  <section id="datahub-planning" class="hub-section" aria-labelledby="hub-planning-title"><div class="hub-section-heading"><h2 id="hub-planning-title">Planning data</h2><span class="hub-storage">Planner · local + configured cloud sync</span></div><p class="info-text">These imports update the capacity plan and MPS. Your existing column mapping, preview and correction checks still apply.</p><div class="hub-current" id="datahub-planner-status" role="status"></div><div id="datahub-planning-imports" class="hub-import-grid"></div></section>
+  <section id="datahub-erp" class="hub-section" aria-labelledby="hub-erp-title"><div class="hub-section-heading"><h2 id="hub-erp-title">ERP reports</h2><span class="hub-storage hub-local">Control Tower · browser storage only</span></div><p class="info-text">Masterdata, stock snapshots and production transactions feed the Control Tower. They are separate from MPS completion imports and are not included in planner cloud sync.</p><div id="datahub-erp-message" class="ct-status" role="status"></div><div id="datahub-erp-imports"><div class="card info-text">Loading ERP import tools…</div></div></section>
+</div>
 <div class="view-panel active" id="panel-weekly">
   <div class="layout weekly-layout">
     <div class="weekly-settings">
@@ -374,8 +380,9 @@ button:disabled{opacity:.6;cursor:not-allowed;}
     <p class="info-text">Net units by actual transaction date, including retained unmatched jobs and dated manual corrections. Undated actuals are excluded until a date is supplied.</p>
     <div style="overflow:auto;max-height:240px;"><table class="gt" id="production-daily-table"></table></div>
   </div>
+  <div class="hub-shortcut"><p>All external uploads are managed in Data Hub. The SKU master stays here for planning.</p><button class="add-btn" onclick="openDataHub('planning')">Open Data Hub</button></div>
   <div class="mps-import-panels">
-    <div class="card">
+    <div class="card" id="mps-import-card">
       <div class="section-label">MPS import (Excel / CSV)</div>
       <p class="info-text">Load your daily batch plan from Excel. Pick the file, check the auto-detected column mapping (date · line · SKU · quantity), then apply. Batches of the imported months replace the existing ones; other months stay untouched.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -387,7 +394,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
       <div id="mps-map" style="margin-top:10px;"></div>
       <div id="mps-preview" style="margin-top:10px;"></div>
     </div>
-    <div class="card">
+    <div class="card" id="completion-import-card">
       <div class="section-label">Production Completion import</div>
       <p class="info-text">Use a full <strong>Job + Transaction Date</strong> daily total export. A decrease requires explicit approval. Unmatched jobs are retained and automatically linked when their MPS batch is added. For incremental files, use unique completion IDs.</p>
       <select id="completion-mode" class="si" style="margin-bottom:8px;" onchange="completionPreview()">
@@ -533,7 +540,8 @@ button:disabled{opacity:.6;cursor:not-allowed;}
           </div>
         </div>
       </div>
-      <div class="card">
+      <div class="hub-shortcut"><p>Upload product-group demand in Data Hub.</p><button class="add-btn" onclick="openDataHub('planning')">Open demand imports</button></div>
+      <div class="card" id="demand-import-card">
         <div class="section-label">Demand import (CSV)</div>
         <p class="info-text">
           Import monthly demand per product group instead of typing it. Two layouts are accepted:<br>
@@ -1971,8 +1979,23 @@ const plannerViews={
   headcount:['Headcount','Workforce & coverage','Compare operator availability with the labour needed to run your plan.','People planning'],
   chart:['Charts','Planning performance','Explore capacity, utilisation, backlog and production adherence.','Performance insights'],
   scenarios:['Scenarios','Compare your options','Evaluate alternative capacity and workforce plans before making changes.','Scenario planning'],
-  tower:['Control Tower','Operations Control Tower','Monitor strategic materials and daily production from your ERP exports.','Materials & production']
+  tower:['Control Tower','Operations Control Tower','Monitor strategic materials and daily production from your ERP exports.','Materials & production'],
+  datahub:['Data Hub','Data imports & sources','Manage all planning and ERP uploads from one workspace.','Data management']
 };
+function mountPlannerImports(){
+  const host=document.getElementById('datahub-planning-imports');
+  ['mps-import-card','completion-import-card','demand-import-card'].forEach(id=>host.appendChild(document.getElementById(id)));
+}
+function openDataHub(section=''){
+  switchTab('datahub');
+  if(section)document.getElementById('datahub-'+section)?.scrollIntoView?.({block:'start',behavior:'instant'});
+}
+function renderDataHub(){
+  const demandValues=Object.values(pgDemand).reduce((sum,month)=>sum+Object.keys(month).length,0);
+  document.getElementById('datahub-planner-status').textContent='Current planner data: '+hu(mps.length)+' batches · '+hu(skus.length)+' SKUs · '+hu(demandValues)+' month / product-group demand values. Counts describe saved planner data, not an import history.';
+  renderProductionIssues();
+  window.LineSightTowerUI?.renderImports?.();
+}
 function plannerNavigationNarrow(){return typeof window.matchMedia==='function'&&window.matchMedia('(max-width:1100px)').matches;}
 function syncPlannerNavigation(){
   const copy=plannerViews[activeTab]||plannerViews.weekly;
@@ -4610,9 +4633,10 @@ document.addEventListener('beforeinput',e=>{
 function render(){
   const focus=focusSnapshot();
   syncPlannerNavigation();
-  document.getElementById('metrics-strip').style.display=activeTab==='tower'?'none':'';
+  document.getElementById('metrics-strip').style.display=['tower','datahub'].includes(activeTab)?'none':'';
   const monthNav=document.querySelector('.month-nav');if(monthNav)monthNav.style.display=activeTab==='tower'?'none':'';
   document.querySelectorAll('.footer button[onclick="undoPlan()"],.footer button[onclick="openHistory()"],.footer button[onclick="printReport()"],.footer button[onclick="resetData()"],.footer #ai-btn').forEach(b=>b.style.display=activeTab==='tower'?'none':'inline-flex');
+  document.querySelectorAll('.footer button[onclick="exportCSV()"]').forEach(b=>b.style.display=activeTab==='datahub'?'none':'inline-flex');
   reconcileProduction();
   syncLines();          // the month on screen may run its own line allocation
   _calendarMemo={};
@@ -4628,6 +4652,7 @@ function render(){
   if(activeTab==='headcount')  renderHeadcount();
   if(activeTab==='chart')      renderCharts();
   if(activeTab==='scenarios')  renderScenarios();
+  if(activeTab==='datahub')    renderDataHub();
   if(activeTab==='tower'&&window.LineSightTowerUI)window.LineSightTowerUI.render();
   focusRestore(focus);
   save();
@@ -4671,6 +4696,7 @@ document.getElementById('days').addEventListener('input',function(){
 window.addEventListener('resize',syncPlannerNavigation);
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open')){closePlannerNavigation();document.getElementById('nav-toggle').focus();}});
 document.getElementById('footer-date').textContent=new Date().toLocaleDateString('en-GB');
+mountPlannerImports();
 loadVersions();
 load();
 render();
@@ -4681,6 +4707,6 @@ initAuth().then(()=>{
   else if(syncCfg.enabled) setSyncStatus('○ local mode — sign in to sync');
 });
 </script>
-<script src="./src/control-tower-ui.js?v=20261119-1"></script>
+<script src="./src/control-tower-ui.js?v=20261119-2"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const T=window.LineSightTower,VERSION='20261119-1';
+  const T=window.LineSightTower,VERSION='20261119-2';
   const el=id=>document.getElementById(id);
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt=v=>v===null||v===undefined?'—':Number(v).toLocaleString('en-GB',{maximumFractionDigits:2});
@@ -8,6 +8,7 @@
   const clone=v=>JSON.parse(JSON.stringify(v));
   const empty=()=>({version:1,master:{items:{},issues:[]},stock:[],transactions:[],imports:{},watch:clone(T.WATCH)});
   let data=empty(),view='materials',pending=null,db=null,loaded=false,busy=false,charts=[],selection='',prodPage=0;
+  let importSurface='tower',hubMounted=false,monitorPending=null;
   let filters={category:'',search:'',from:'',to:'',department:T.CFC,line:'',group:'',family:'',generic:'',sku:''};
   let stockDate='',stockScope='all',materialPage=0;
   const button=document.createElement('button');button.className='tab';button.dataset.panel='tower';button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V7l6 3V4l6 3v14M3 21h18V11l-6 3M7 15h1M7 18h1M11 12h1M11 16h1M18 18h1"/></svg><span>Control Tower</span>';button.onclick=()=>switchTab('tower');
@@ -15,7 +16,7 @@
   const panel=document.createElement('div');panel.className='view-panel';panel.id='panel-tower';
   panel.innerHTML=`<div class="ct-toolbar"><div class="ct-tabs" role="tablist" aria-label="Control Tower views"><button class="add-btn" data-view="materials" role="tab">Strategic materials</button><button class="add-btn" data-view="explorer" role="tab">Stock explorer</button><button class="add-btn" data-view="production" role="tab">Daily production</button><button class="add-btn" data-view="imports" role="tab">ERP imports</button></div><div class="ct-actions"><button class="add-btn" id="ct-export" style="margin:0;">Export this view</button><button class="add-btn" id="ct-backup" style="margin:0;">Download ERP backup</button></div></div><div id="ct-message" class="ct-status" role="status"></div><div id="ct-body"></div>`;
   document.querySelector('.footer').before(panel);
-  panel.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;selection='';render();});
+  panel.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{if(b.dataset.view==='imports'){openImports();return;}view=b.dataset.view;selection='';render();});
   el('ct-export').onclick=exportView;el('ct-backup').onclick=backup;
   function database(){return new Promise((resolve,reject)=>{const request=indexedDB.open('linesight-control-tower',1);request.onupgradeneeded=()=>request.result.createObjectStore('state');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
   function read(){return new Promise((resolve,reject)=>{const req=db.transaction('state').objectStore('state').get('current');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
@@ -24,7 +25,16 @@
     request.onsuccess=()=>{const revision=request.result?.revision||0;if(revision!==expected){conflict=true;tx.abort();return;}next.revision=revision+1;store.put(next,'current');};
     tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(conflict?Error('ERP data changed in another tab. Reload before editing or importing again.'):tx.error||Error('Browser storage write aborted'));
   });}
-  function message(text,error=false){el('ct-message').textContent=text;el('ct-message').className='ct-status'+(error?' ct-error':'');}
+  function message(text,error=false){el('ct-message').textContent=text;el('ct-message').className='ct-status'+(error?' ct-error':'');const hub=el('datahub-erp-message');if(importSurface==='hub'&&hub){hub.textContent=text;hub.className='ct-status'+(error?' ct-error':'');}}
+  function openImports(section='erp'){if(typeof window.openDataHub==='function')window.openDataHub(section);else{view='imports';importSurface='tower';render();}}
+  function refreshImportSurface(){if(importSurface==='hub')imports();else render();}
+  function renderHubImports(){
+    const host=el('datahub-erp-imports');if(!host)return;
+    importSurface='hub';
+    if(!loaded){host.innerHTML='<div class="card ct-muted">Loading local ERP data…</div>';return;}
+    if(!db){host.innerHTML='<div class="card ct-error">Browser storage is unavailable. ERP imports cannot be saved.</div>';return;}
+    if(!hubMounted){imports();hubMounted=true;}
+  }
   function destroyCharts(){charts.forEach(c=>c.destroy());charts=[];}
   function select(id,label,values,value,key=v=>v){return `<label>${escape(label)}<select id="${id}" class="si"><option value="">All</option>${values.map(v=>`<option value="${escape(v)}" ${key(v)===key(value)?'selected':''}>${escape(v)}</option>`).join('')}</select></label>`;}
   const unique=values=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b));
@@ -63,10 +73,10 @@
   function inventoryRows(){const snapshot=currentSnapshot();return snapshot?T.inventory(snapshot.rows,materialCatalog()).filter(r=>(!filters.category||r.category===filters.category)&&(!filters.search||[r.sku,r.name,r.family].join(' ').toLowerCase().includes(filters.search.toLowerCase()))):[];}
   function materials(){
     const snapshot=currentSnapshot(),setup=T.monitorSetup(data.watch,data.monitors),results=T.monitorResults(snapshot?.rows||[],setup),configured=setup.some(p=>p.groups.length),removals=new Set();
-    el('ct-body').innerHTML=`<div class="ct-toolbar ct-monitor-tools"><div class="ct-filters" style="margin:0;">${select('ct-monitor-date','Stock snapshot',data.stock.map(s=>s.date).sort().reverse(),snapshot?.date||'').replace('<option value="">All</option>','<option value="">Latest snapshot</option>')}</div><div class="ct-actions"><button id="ct-save-monitors" class="add-btn">Save monitor changes</button><button id="ct-download-monitors" class="add-btn">Download monitor setup</button><label class="ct-muted ct-monitor-import">Import monitor setup<input id="ct-import-monitors" type="file" accept="application/json,.json"></label></div></div>
+    el('ct-body').innerHTML=`<div class="ct-toolbar ct-monitor-tools"><div class="ct-filters" style="margin:0;">${select('ct-monitor-date','Stock snapshot',data.stock.map(s=>s.date).sort().reverse(),snapshot?.date||'').replace('<option value="">All</option>','<option value="">Latest snapshot</option>')}</div><div class="ct-actions"><button id="ct-save-monitors" class="add-btn">Save monitor changes</button><button id="ct-download-monitors" class="add-btn">Download monitor setup</button><button id="ct-open-monitor-setup" class="add-btn">Import monitor setup in Data Hub</button></div></div>
     ${!snapshot?'<div class="ct-status ct-warning">No stock snapshot imported. Choose Stock_on_hand.xlsx in ERP imports, then click Apply import. <button id="ct-open-imports" class="add-btn">Open ERP imports</button></div>':`<div class="ct-source">Stock date: ${escape(snapshot.date)} (${escape(snapshot.dateBasis||'selected at import')}). ${source(snapshot)}.</div>`}
     ${!configured?'<div class="ct-status">No monitor items configured yet. Import your private monitor setup or add items below. Imported stock remains available in Stock explorer.</div>':''}
-    <div class="ct-source">Available = Available at ${T.AVAILABLE.map(escape).join(', ')}. HOLD is excluded. Safety stock is a manual target in ERP source units; a blank target is not zero. Save monitor changes applies all four panels.</div><div id="ct-monitor-import-preview"></div>
+    <div class="ct-source">Available = Available at ${T.AVAILABLE.map(escape).join(', ')}. HOLD is excluded. Safety stock is a manual target in ERP source units; a blank target is not zero. Save monitor changes applies all four panels.</div>
     <div class="ct-monitor-grid">${results.map(p=>`<section class="card ct-monitor-card" aria-label="${escape(p.name)}"><div class="ct-monitor-heading"><h3>${escape(p.name)}</h3><span class="ct-muted">${p.groups.length} groups · ${p.groups.reduce((sum,g)=>sum+g.count,0)} items</span></div>
       ${p.groups.length?`<div class="ct-chart ct-monitor-chart"><canvas id="ct-monitor-chart-${p.id}" role="img" aria-label="${escape(p.name)} available stock and safety stock"></canvas></div><div class="ct-table-wrap ct-monitor-table-wrap"><table class="gt ct-monitor-table"><thead><tr><th>Item / family</th><th>Available</th><th>Safety stock</th><th>Gap</th><th>Status</th><th></th></tr></thead><tbody>${p.groups.map(g=>`<tr><td><details class="ct-monitor-members"><summary>${escape(g.name)}<span class="ct-muted">${g.found}/${g.count} items found</span></summary><label>Display name<input class="ni" id="ct-monitor-name-${p.id}-${g.id}" value="${escape(g.name)}" aria-label="Display name ${escape(p.name+' '+g.name)}"></label><label>Item codes<textarea id="ct-monitor-skus-${p.id}-${g.id}" class="ni" aria-label="Item codes ${escape(p.name+' '+g.name)}">${escape(g.skus.join('\n'))}</textarea></label><div class="ct-muted">${g.detail.map(r=>`${escape(r.sku)} · ${escape(r.name)}: ${fmt(r.available)} available; ${fmt(r.blocked)} HOLD`).join('<br>')}</div></details></td><td class="ct-number">${fmt(g.available)}${g.available!==null&&!g.complete?'*':''}</td><td><input class="numi" id="ct-monitor-ss-${p.id}-${g.id}" type="number" min="0" step="any" value="${g.safetyStock??''}" placeholder="Not set" aria-label="Safety stock ${escape(p.name+' '+g.name)}"></td><td class="ct-number">${g.gap>0?'+':''}${fmt(g.gap)}</td><td><span class="ct-badge ${g.status==='Below safety stock'?'bad':!g.complete?'warn':g.status==='At / above safety stock'?'good':''}">${escape(snapshot?g.status:'No snapshot')}</span></td><td><button id="ct-monitor-remove-${p.id}-${g.id}" class="ct-monitor-remove" aria-label="Remove ${escape(p.name+' '+g.name)}" title="Remove this monitor group, not its stock data">×</button></td></tr>`).join('')}</tbody></table></div><p class="ct-muted ct-monitor-note">* A partial sum excludes missing items; the full group total and safety-stock comparison are unknown. Expand a name to inspect or edit its item codes.</p>`:'<div class="ct-empty ct-monitor-empty">Add the items or families to monitor in this panel.</div>'}
       <details class="ct-details ct-monitor-add" ${!p.groups.length||p.id==='custom'?'open':''}><summary>Add item / group</summary><div class="ct-monitor-form"><label>Display name<input class="ni" id="ct-monitor-add-name-${p.id}" placeholder="Item or family name" aria-label="New group name ${escape(p.name)}"></label><label>Safety stock<input class="ni" id="ct-monitor-add-ss-${p.id}" type="number" min="0" step="any" placeholder="Optional" aria-label="New safety stock ${escape(p.name)}"></label><label class="ct-monitor-wide">Item codes<textarea class="ni" id="ct-monitor-add-skus-${p.id}" placeholder="One or more item codes, separated by commas or new lines" aria-label="New item codes ${escape(p.name)}"></textarea></label><button class="add-btn" id="ct-monitor-add-${p.id}">Add to ${escape(p.name)}</button></div></details></section>`).join('')}</div>`;
@@ -76,16 +86,10 @@
     const save=async next=>{busy=true;el('ct-save-monitors').disabled=true;try{const state={...data,monitors:T.validateMonitors(next)};await persist(state);data=state;message('Monitor settings and safety stock saved. ERP source data was not changed.');render();}finally{busy=false;if(el('ct-save-monitors'))el('ct-save-monitors').disabled=false;}};
     const action=async fn=>{if(busy)return;try{await fn();}catch(e){message('Monitor changes were not saved: '+e.message,true);}};
     el('ct-monitor-date').onchange=e=>{stockDate=e.target.value;render();};
-    if(el('ct-open-imports'))el('ct-open-imports').onclick=()=>{view='imports';render();};
+    if(el('ct-open-imports'))el('ct-open-imports').onclick=()=>openImports();
     el('ct-save-monitors').onclick=()=>action(()=>save(edits()));
     el('ct-download-monitors').onclick=()=>download('linesight-monitor-setup-'+today()+'.json',JSON.stringify({kind:'linesight-monitor-setup',version:1,monitors:setup},null,2),'application/json');
-    el('ct-import-monitors').onchange=e=>action(async()=>{
-      const file=e.target.files[0];if(!file)return;const payload=JSON.parse(await file.text()),next=T.importMonitorSetup(payload,setup);
-      el('ct-monitor-import-preview').innerHTML=`<div class="ct-status"><strong>${escape(file.name||'Monitor setup')}</strong><p>${next.map(p=>escape(p.name)+': '+p.groups.length+' groups').join(' · ')}</p><p>Apply replaces monitor item lists only. Existing non-blank safety-stock targets for matching groups are kept. Stock snapshots, transactions and masterdata are not changed.</p><div class="ct-actions"><button class="add-btn" id="ct-monitor-apply-setup">Apply monitor setup</button><button class="add-btn" id="ct-monitor-cancel-setup">Cancel</button></div></div>`;
-      el('ct-monitor-apply-setup').onclick=()=>action(()=>save(T.importMonitorSetup(payload,edits())));
-      el('ct-monitor-cancel-setup').onclick=()=>{el('ct-monitor-import-preview').innerHTML='';el('ct-import-monitors').value='';message('Monitor setup import cancelled. Existing settings were kept.');};
-      message('Monitor setup preview ready. Click Apply monitor setup to save it.');
-    });
+    el('ct-open-monitor-setup').onclick=()=>openImports('settings');
     for(const p of setup){
       el('ct-monitor-add-'+p.id).onclick=()=>action(async()=>{const next=clone(edits()),target=next.find(x=>x.id===p.id),skus=codes(el('ct-monitor-add-skus-'+p.id).value);target.groups.push({id:'g'+Date.now().toString(36),name:el('ct-monitor-add-name-'+p.id).value.trim()||skus[0]||'',skus,safetyStock:safety('ct-monitor-add-ss-'+p.id)});await save(next);});
       for(const g of p.groups){
@@ -117,7 +121,7 @@
     const applySearch=()=>{filters.search=el('ct-material-search').value;selection='';materialPage=0;render();};
     el('ct-apply-search').onclick=applySearch;
     el('ct-material-search').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();applySearch();}};
-    if(el('ct-open-imports'))el('ct-open-imports').onclick=()=>{view='imports';render();};
+    if(el('ct-open-imports'))el('ct-open-imports').onclick=()=>openImports();
     if(el('ct-reset-materials'))el('ct-reset-materials').onclick=()=>{stockScope='all';filters.category='';filters.search='';selection='';materialPage=0;render();};
     el('ct-add-watch').onclick=async()=>{const key=T.sku(el('ct-add-sku').value);if(!key||data.watch.some(r=>r.sku===key)){message('Enter a new item code.',true);return;}const next={...data,watch:clone(data.watch)};next.watch.push({sku:key,category:el('ct-add-category').value.trim()||'Other',family:'Other',name:key,minimum:null});try{await persist(next);data=next;render();}catch(e){message('Could not save watchlist: '+e.message,true);}};
     if(!snapshot||!rows.length)return;
@@ -176,10 +180,24 @@
     chart('ct-group-chart','bar',result.groups.map(r=>r.label),[{label:'Actual quantity',data:result.groups.map(r=>r.qty),backgroundColor:'#08775a'}],{indexAxis:'y'});
   }
   function imports(){
-    el('ct-body').innerHTML=`<div class="ct-status ct-warning">ERP dashboard data is stored in this browser using IndexedDB. It is separate from planner cloud sync and plan Undo / Versions. Download an ERP backup before clearing browser data.</div><div class="ct-import-grid">${[['master','Masterdata','Item Code2 joins production Item. Identical duplicates do not multiply production. Conflicting classifications remain visible.'],['stock','Stock on hand','Full stock snapshot. Select its reporting date. Reimporting a date replaces that snapshot only.'],['transactions','Production transactions','Work Order Completion only. Quantity is the production measure. Internal ID prevents repeated uploads from counting twice. Omitted IDs are retained; changes to existing IDs require approval.']].map(([kind,title,desc])=>`<div class="card"><h3>${title}</h3><p class="ct-muted">${desc}</p><input type="file" accept=".xlsx,.xls,.csv" data-import="${kind}" aria-label="Import ${title}">${kind==='stock'?`<label class="ct-muted">Stock reporting date (confirm)<input type="date" id="ct-stock-report-date" class="ni" value="${today()}"></label>`:''}<div class="ct-source">${source(data.imports[kind])}</div></div>`).join('')}</div><div id="ct-import-preview" class="card" style="margin-top:18px;"></div><div class="card"><div class="section-label">Data quality</div><p class="ct-muted">${Object.keys(data.master.items).length} masterdata items; ${fmt(data.master.duplicateRows||0)} duplicate master rows consolidated. ${data.stock.length} stock snapshots. ${fmt(data.transactions.length)} unique completion records.</p>${data.master.issues.length?`<details class="ct-details"><summary>Conflicting master classifications (${data.master.issues.length})</summary>${data.master.issues.slice(0,50).map(s=>`<p class="ct-muted">${escape(s)}</p>`).join('')}</details>`:''}<p class="ct-muted">Country differences remain as multiple countries on one SKU. Conflicting HC or missing standard minutes are not used to invent labor or OEE KPIs. Missing source days are not automatically labelled zero-production days.</p><div class="ct-actions" style="margin-top:12px;"><label class="ct-muted">Restore an ERP backup <input type="file" id="ct-restore" accept="application/json,.json"></label></div></div>`;
-    panel.querySelectorAll('[data-import]').forEach(input=>input.onchange=()=>{if(input.files[0])prepareImport(input.dataset.import,input.files[0]);});
-    el('ct-restore').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const parsed=T.validateBackup(JSON.parse(await file.text()));if(!confirm('Replace local ERP dashboard data with this backup? Download the current backup first if needed.'))return;await persist(parsed);data=parsed;setDefaultDates();stockScope=data.watch.length?'watch':'all';filters.category='';filters.search='';materialPage=0;view=data.stock.length?(T.monitorSetup(data.watch,data.monitors).some(p=>p.groups.length)?'materials':'explorer'):'imports';message('ERP backup restored.');render();}catch(error){message(error.message,true);}};
+    const host=el(importSurface==='hub'?'datahub-erp-imports':'ct-body');
+    host.innerHTML=`<div class="ct-status ct-warning">ERP dashboard data is stored in this browser using IndexedDB. It is separate from planner cloud sync and plan Undo / Versions. Download an ERP backup before clearing browser data.</div><div class="ct-import-grid">${[['master','Masterdata','Item Code2 joins production Item. Identical duplicates do not multiply production. Conflicting classifications remain visible.'],['stock','Stock on hand','Full stock snapshot. Select its reporting date. Reimporting a date replaces that snapshot only.'],['transactions','Production transactions','Work Order Completion only. Quantity is the production measure. Internal ID prevents repeated uploads from counting twice. Omitted IDs are retained; changes to existing IDs require approval.']].map(([kind,title,desc])=>`<div class="card"><h3>${title}</h3><p class="ct-muted">${desc}</p><input type="file" accept=".xlsx,.xls,.csv" data-import="${kind}" aria-label="Import ${title}">${kind==='stock'?`<label class="ct-muted">Stock reporting date (confirm)<input type="date" id="ct-stock-report-date" class="ni" value="${today()}"></label>`:''}<div class="ct-source">${source(data.imports[kind])}</div></div>`).join('')}</div><div id="ct-import-preview" class="card" style="margin-top:18px;"></div><div class="card"><div class="section-label">Data quality</div><p class="ct-muted">${Object.keys(data.master.items).length} masterdata items; ${fmt(data.master.duplicateRows||0)} duplicate master rows consolidated. ${data.stock.length} stock snapshots. ${fmt(data.transactions.length)} unique completion records.</p>${data.master.issues.length?`<details class="ct-details"><summary>Conflicting master classifications (${data.master.issues.length})</summary>${data.master.issues.slice(0,50).map(s=>`<p class="ct-muted">${escape(s)}</p>`).join('')}</details>`:''}<p class="ct-muted">Country differences remain as multiple countries on one SKU. Conflicting HC or missing standard minutes are not used to invent labor or OEE KPIs. Missing source days are not automatically labelled zero-production days.</p><div class="ct-actions" style="margin-top:12px;"><label class="ct-muted">Restore an ERP backup <input type="file" id="ct-restore" accept="application/json,.json"></label></div></div>`;
+    host.innerHTML+=`<section id="datahub-settings" class="hub-section" aria-labelledby="hub-settings-title"><div class="hub-section-heading"><h2 id="hub-settings-title">Backups &amp; setup</h2><span class="hub-storage hub-local">Private browser data</span></div><div class="hub-backup-grid"><div class="card"><div class="section-label">Strategic monitor setup</div><p class="ct-muted">Import item lists and monitor groups from a private JSON setup. Existing non-blank safety-stock targets for matching groups are kept. Stock and production records are not replaced.</p><label class="ct-muted">Import monitor setup<input id="ct-import-monitors" type="file" accept="application/json,.json" aria-label="Import monitor setup"></label><button id="ct-hub-download-monitors" class="add-btn">Download current monitor setup</button><div id="ct-monitor-import-preview"></div></div><div class="card"><div class="section-label">ERP backup</div><p class="ct-muted">Includes ERP masterdata, stock snapshots, transactions and monitor settings. It does not include your capacity plan or MPS. Restoring replaces local ERP data only and requires confirmation.</p><button id="ct-hub-backup" class="add-btn">Download ERP backup</button><div id="ct-hub-restore-slot"></div></div></div></section>`;
+    el('ct-hub-restore-slot').appendChild(el('ct-restore').parentElement);
+    host.querySelectorAll('[data-import]').forEach(input=>input.onchange=()=>{const file=input.files[0];if(file)prepareImport(input.dataset.import,file);input.value='';});
+    el('ct-restore').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const parsed=T.validateBackup(JSON.parse(await file.text()));if(!confirm('Replace local ERP dashboard data with this backup? Download the current backup first if needed.'))return;await persist(parsed);data=parsed;setDefaultDates();stockScope=data.watch.length?'watch':'all';filters.category='';filters.search='';materialPage=0;view=data.stock.length?(T.monitorSetup(data.watch,data.monitors).some(p=>p.groups.length)?'materials':'explorer'):'imports';pending=null;monitorPending=null;message('ERP backup restored.');refreshImportSurface();}catch(error){message(error.message,true);}};
+    el('ct-hub-backup').onclick=backup;
+    el('ct-hub-download-monitors').onclick=()=>download('linesight-monitor-setup-'+today()+'.json',JSON.stringify({kind:'linesight-monitor-setup',version:1,monitors:T.monitorSetup(data.watch,data.monitors)},null,2),'application/json');
+    el('ct-import-monitors').onchange=async e=>{if(busy){message('Finish the current import first.',true);return;}const file=e.target.files[0];if(!file)return;try{const payload=JSON.parse(await file.text());T.importMonitorSetup(payload,T.monitorSetup(data.watch,data.monitors));monitorPending={payload,name:file.name||'Monitor setup'};monitorPreview();message('Monitor setup preview ready. Click Apply monitor setup to save it.');}catch(error){monitorPending=null;el('ct-monitor-import-preview').innerHTML='';message('Monitor changes were not saved: '+error.message,true);}};
+    if(monitorPending)monitorPreview();
     if(pending)preview();
+  }
+  function monitorPreview(){
+    if(!monitorPending)return;
+    const proposal=monitorPending,next=T.importMonitorSetup(proposal.payload,T.monitorSetup(data.watch,data.monitors));
+    el('ct-monitor-import-preview').innerHTML=`<div class="ct-status"><strong>${escape(proposal.name)}</strong><p>${next.map(p=>escape(p.name)+': '+p.groups.length+' groups').join(' · ')}</p><p>Apply replaces monitor item lists only. Existing non-blank safety-stock targets for matching groups are kept. Stock snapshots, transactions and masterdata are not changed.</p><div class="ct-actions"><button class="add-btn" id="ct-monitor-apply-setup">Apply monitor setup</button><button class="add-btn" id="ct-monitor-cancel-setup">Cancel</button></div></div>`;
+    el('ct-monitor-apply-setup').onclick=async()=>{if(busy||monitorPending!==proposal)return;busy=true;el('ct-monitor-apply-setup').disabled=true;try{const next={...data,monitors:T.importMonitorSetup(proposal.payload,T.monitorSetup(data.watch,data.monitors))};await persist(next);data=next;monitorPending=null;message('Monitor settings and safety stock saved. ERP source data was not changed.');imports();}catch(error){message('Monitor changes were not saved: '+error.message,true);el('ct-monitor-apply-setup').disabled=false;}finally{busy=false;}};
+    el('ct-monitor-cancel-setup').onclick=()=>{monitorPending=null;el('ct-monitor-import-preview').innerHTML='';el('ct-import-monitors').value='';message('Monitor setup import cancelled. Existing settings were kept.');};
   }
   function parseFile(kind,file){return new Promise((resolve,reject)=>{const worker=new Worker('./src/erp-import-worker.js?v='+VERSION);worker.onmessage=e=>{if(e.data.progress)message(e.data.progress);if(e.data.error){worker.terminate();reject(Error(e.data.error));}if(e.data.result){worker.terminate();resolve(e.data.result);}};worker.onerror=e=>{worker.terminate();reject(Error(e.message||'The Excel import worker failed.'));};worker.postMessage({kind,file});});}
   async function prepareImport(kind,file){
@@ -187,7 +205,7 @@
     try{
       const date=kind==='stock'?T.date(el('ct-stock-report-date').value):null;if(kind==='stock'&&!date)throw Error('Select the stock reporting date first.');
       const result=await parseFile(kind,file);
-      pending={kind,result,source:file.name,date};message('Import preview ready. Click Apply import below to save the data and open the dashboard. Nothing has been changed yet.');preview();
+      pending={kind,result,source:file.name,date};message('Import preview ready. Click Apply import below to save the data. Nothing has been changed yet.');preview();
     }catch(e){message(e.message,true);}finally{busy=false;}
   }
   function preview(){
@@ -200,7 +218,7 @@
     if(correction)el('ct-confirm-change').onchange=e=>el('ct-apply').disabled=blocked||!e.target.checked;
     el('ct-cancel').onclick=()=>{pending=null;el('ct-import-preview').innerHTML='';message('Import cancelled.');};
     el('ct-apply').onclick=async()=>{
-      if(blocked||busy)return;busy=true;el('ct-apply').disabled=true;
+      if(blocked||busy||(correction&&!el('ct-confirm-change').checked))return;busy=true;el('ct-apply').disabled=true;
       try{
         const next={...data,imports:{...data.imports}};const at=new Date().toISOString();
         if(p.kind==='master')next.master=r;
@@ -208,10 +226,10 @@
         if(p.kind==='stock')next.stock=[...data.stock.filter(s=>s.date!==p.date),{date:p.date,rows:r.rows,source:p.source,at}].sort((a,b)=>a.date.localeCompare(b.date));
         next.imports[p.kind]={source:p.source,at,rows:r.sourceRows};
         await persist(next);data=next;pending=null;setDefaultDates();
-        if(p.kind==='stock'){view=T.monitorSetup(data.watch,data.monitors).some(p=>p.groups.length)?'materials':'explorer';stockDate=p.date;if(!data.watch.length)stockScope='all';filters.category='';filters.search='';selection='';materialPage=0;message('Stock snapshot saved for '+p.date+'. The stock dashboard is shown below.');}
+        if(p.kind==='stock'){view=T.monitorSetup(data.watch,data.monitors).some(p=>p.groups.length)?'materials':'explorer';stockDate=p.date;if(!data.watch.length)stockScope='all';filters.category='';filters.search='';selection='';materialPage=0;message('Stock snapshot saved for '+p.date+(importSurface==='hub'?'. Open Stock explorer or Strategic materials to view it.':'. The stock dashboard is shown below.'));}
         else if(p.kind==='transactions'){view='production';message('Production import saved. Repeated Internal IDs are not added twice.');}
         else message('Masterdata import saved. Open Strategic materials or Daily production to view the data.');
-        render();
+        refreshImportSurface();
       }catch(e){message('Import was not saved: '+e.message,true);if(el('ct-apply'))el('ct-apply').disabled=false;}finally{busy=false;}
     };
   }
@@ -227,6 +245,6 @@
     download('linesight-'+view+'-'+today()+'.csv','\uFEFF'+csv(rows),'text/csv;charset=utf-8');
   }
   function backup(){download('linesight-erp-backup-'+today()+'.json',JSON.stringify(data),'application/json');}
-  window.LineSightTowerUI={render,exportView};
-  database().then(async connection=>{db=connection;data=await read()||empty();stockScope=data.watch.length?'watch':'all';loaded=true;setDefaultDates();if(location.hash==='#tower')switchTab('tower');else render();}).catch(e=>{loaded=true;message('Local ERP storage is unavailable: '+e.message,true);el('ct-body').innerHTML='<div class="card ct-empty">Enable browser storage before importing ERP data.</div>';});
+  window.LineSightTowerUI={render,exportView,renderImports:renderHubImports,openView:next=>{if(!['materials','explorer','production'].includes(next))return;view=next;switchTab('tower');}};
+  database().then(async connection=>{db=connection;data=await read()||empty();stockScope=data.watch.length?'watch':'all';loaded=true;setDefaultDates();if(location.hash==='#datahub')switchTab('datahub');else if(el('panel-datahub')?.classList?.contains?.('active'))renderHubImports();else if(location.hash==='#tower')switchTab('tower');else render();}).catch(e=>{loaded=true;message('Local ERP storage is unavailable: '+e.message,true);el('ct-body').innerHTML='<div class="card ct-empty">Enable browser storage before importing ERP data.</div>';if(importSurface==='hub')renderHubImports();});
 })();
