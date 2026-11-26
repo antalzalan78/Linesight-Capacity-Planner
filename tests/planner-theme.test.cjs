@@ -19,8 +19,8 @@ test('one accessible navigation preserves the original planner views and the Con
   const nav=html.match(/<nav class="tabs"[\s\S]*?<\/nav>/)[0];
   assert.equal((html.match(/<nav class="tabs"/g)||[]).length,1);
   assert.match(nav,/aria-label="Planner views"/);
-  assert.deepEqual([...nav.matchAll(/data-panel="([^"]+)"/g)].map(m=>m[1]),['weekly','mps','monthly','backlog','demand','headcount','chart','scenarios','datahub']);
-  assert.equal((nav.match(/<svg[^>]*aria-hidden="true"/g)||[]).length,9);
+  assert.deepEqual([...nav.matchAll(/data-panel="([^"]+)"/g)].map(m=>m[1]),['overview','weekly','mps','monthly','backlog','demand','headcount','chart','scenarios','datahub']);
+  assert.equal((nav.match(/<svg[^>]*aria-hidden="true"/g)||[]).length,10);
   assert.match(html,/aria-controls="planner-rail"/);assert.match(html,/class="skip-link" href="#planner-view-title"/);
   assert.match(fs.readFileSync(path.join(__dirname,'..','src','control-tower-ui.js'),'utf8'),/button.dataset.panel='tower'/);
 });

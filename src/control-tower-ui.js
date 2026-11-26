@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const T=window.LineSightTower,VERSION='20261119-2';
+  const T=window.LineSightTower,VERSION='20261126-1';
   const el=id=>document.getElementById(id);
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt=v=>v===null||v===undefined?'—':Number(v).toLocaleString('en-GB',{maximumFractionDigits:2});
@@ -245,6 +245,11 @@
     download('linesight-'+view+'-'+today()+'.csv','\uFEFF'+csv(rows),'text/csv;charset=utf-8');
   }
   function backup(){download('linesight-erp-backup-'+today()+'.json',JSON.stringify(data),'application/json');}
-  window.LineSightTowerUI={render,exportView,renderImports:renderHubImports,openView:next=>{if(!['materials','explorer','production'].includes(next))return;view=next;switchTab('tower');}};
-  database().then(async connection=>{db=connection;data=await read()||empty();stockScope=data.watch.length?'watch':'all';loaded=true;setDefaultDates();if(location.hash==='#datahub')switchTab('datahub');else if(el('panel-datahub')?.classList?.contains?.('active'))renderHubImports();else if(location.hash==='#tower')switchTab('tower');else render();}).catch(e=>{loaded=true;message('Local ERP storage is unavailable: '+e.message,true);el('ct-body').innerHTML='<div class="card ct-empty">Enable browser storage before importing ERP data.</div>';if(importSurface==='hub')renderHubImports();});
+  window.LineSightTowerUI={render,exportView,renderImports:renderHubImports,
+    getOverview:options=>!loaded?{status:'loading'}:!db?{status:'unavailable'}:window.LineSightOverview.erp(data,options),
+    openView:(next,options={})=>{if(!['materials','explorer','production'].includes(next))return;view=next;selection='';
+      if(options.stockDate)stockDate=options.stockDate;
+      if(next==='production'&&options.from){filters={...filters,from:options.from,to:options.to||'',department:options.department??T.CFC,line:'',group:'',family:'',generic:'',sku:''};prodPage=0;}
+      switchTab('tower');}};
+  database().then(async connection=>{db=connection;data=await read()||empty();stockScope=data.watch.length?'watch':'all';loaded=true;setDefaultDates();if(location.hash==='#datahub')switchTab('datahub');else if(el('panel-datahub')?.classList?.contains?.('active'))renderHubImports();else if(location.hash==='#tower')switchTab('tower');else render();window.LineSightOverviewUI?.refresh();}).catch(e=>{loaded=true;db=null;message('Local ERP storage is unavailable: '+e.message,true);el('ct-body').innerHTML='<div class="card ct-empty">Enable browser storage before importing ERP data.</div>';if(importSurface==='hub')renderHubImports();window.LineSightOverviewUI?.refresh();});
 })();

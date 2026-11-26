@@ -15,6 +15,7 @@ function planner(){
       textContent:'',innerHTML:'',attributes:{},classList:{add(){},remove(){},toggle(){},contains(){return false;}},
       setAttribute(name,value){this.attributes[name]=String(value);},
       addEventListener(){},appendChild(){},contains(){return false;},focus(){},getAttribute(){return null;},rows:[],
+      querySelectorAll:()=>[],scrollIntoView(){},
       createTHead(){this.head=element(Symbol());return this.head;},createTBody(){this.body=element(Symbol());return this.body;},
       insertRow(){const row=element(Symbol());this.rows.push(row);return row;},getContext(){return {};}};
     elements.set(id,el);return el;
@@ -26,6 +27,8 @@ function planner(){
       createElement:()=>element(Symbol()),addEventListener(){},activeElement:null,body:element('body')},window:{addEventListener(){}},fetch:()=>{throw Error('Unexpected network request');}});
   vm.runInContext(fs.readFileSync(path.join(root,'src','calculations.js'),'utf8'),context);
   vm.runInContext(fs.readFileSync(path.join(root,'src','production.js'),'utf8'),context);
+  vm.runInContext(fs.readFileSync(path.join(root,'src','control-tower.js'),'utf8'),context);
+  vm.runInContext(fs.readFileSync(path.join(root,'src','operations-overview.js'),'utf8'),context);
   vm.runInContext(script.slice(0,script.lastIndexOf("document.getElementById('footer-date')")),context);
   const run=code=>vm.runInContext(code,context);
   const set=(name,value)=>{context.fixtureValue=value;run(name+'=fixtureValue;');delete context.fixtureValue;};

@@ -22,7 +22,7 @@ async function towerUI(initial,{failWrite=false,openDataHub}={}){
       abort(){tx.onabort?.();}};
     return tx;
   }};
-  const window={LineSightTower:T,Chart:true};
+  const window={LineSightTower:T,LineSightOverview:require('../../src/operations-overview.js'),Chart:true};
   if(openDataHub)window.openDataHub=openDataHub;
   const context=vm.createContext({console,Date,Math,Map,Set,JSON,Blob,queueMicrotask,
     document:{createElement:()=>element(Symbol()),querySelector:element,getElementById:element},window,
