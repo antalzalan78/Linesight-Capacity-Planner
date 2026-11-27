@@ -17,7 +17,7 @@
       if(target==='sources'){el('ops-sources')?.scrollIntoView({block:'start',behavior:'instant'});el('ops-freshness-days')?.focus({preventScroll:true});return;}
       if(target==='materials'){window.LineSightTowerUI?.openView('materials',{stockDate:model.erp.stockDate});return;}
       if(target==='erp-production'){window.LineSightTowerUI?.openView('production',{from:model.period.start,to:model.period.asOf,department:window.LineSightTower.CFC});return;}
-      if(target==='planning'||target==='erp'){openDataHub(target);return;}
+      if(target==='planning'||target==='erp'||target==='production'){openDataHub(target);return;}
       if(target.startsWith('exceptions:')){type=target.split(':')[1];render();el('ops-exceptions')?.scrollIntoView({block:'start',behavior:'instant'});el('ops-exception-filter')?.focus({preventScroll:true});return;}
       if(target==='mps'){mpsFltLine='';mpsFltPg='';mpsFltDate='';}
       switchTab(target);
@@ -55,7 +55,7 @@
     const stale=m.sources.filter(s=>s.status==='stale').length,missing=m.sources.filter(s=>s.status==='missing').length;
     el('panel-overview').innerHTML=`
       <div class="ops-controls"><div class="ops-period"><label for="ops-focus">Focus date</label><input id="ops-focus" class="ni" type="date" min="${p.start}" max="${p.end}" value="${p.focus}"><button class="add-btn" id="ops-current">Today</button></div><div class="ops-actions"><button class="add-btn" id="ops-export">Export overview CSV</button>${action('Data Hub','erp')}</div></div>
-      <div class="ops-context">${escape(date(p.focus))} · ${escape(weekLabel)} <span>Daily / weekly production uses MPS completions. Stock uses the latest snapshot on or before ${escape(date(p.asOf))}.</span></div>
+      <div class="ops-context">${escape(date(p.focus))} · ${escape(weekLabel)} <span>Daily / weekly production uses MPS completion totals.${m.completionInfo?.kind==='netsuite-transactions'?' MPS department: '+escape(m.completionInfo.department||'All departments')+'.':''} Stock uses the latest snapshot on or before ${escape(date(p.asOf))}.</span></div>
       ${p.future?'<p class="ops-notice">Future planning date: actual production is not yet available. Completion and exceptions use records through '+escape(date(p.asOf))+'.</p>':p.focus===p.today?'<p class="ops-notice">Today is in progress. Actuals are recorded quantities, not a confirmed final daily total.</p>':''}
       ${stale||missing?`<div class="ops-notice ops-freshness-alert">Sources beyond the ${warningDays}-calendar-day rule: ${stale} · Sources without dated data: ${missing}. ${action('Review sources','sources')}</div>`:''}
       <div class="ops-kpis">
@@ -67,7 +67,7 @@
       <div class="ops-main-grid"><section class="card ops-production" aria-labelledby="ops-prod-title"><div class="ops-heading"><h2 id="ops-prod-title">Plan vs. recorded production</h2>${action('Open MPS','mps')}</div>
         <div class="ops-comparisons"><div><span>Focus day · ${escape(date(p.focus))}</span><strong>${number(m.day.planned)} / ${number(m.day.actual)}</strong><small>scheduled / recorded units</small></div><div><span>Focus week through ${escape(date(p.asOf))} · ${m.week.recordedDays} dates with actuals</span><strong>${number(m.week.plannedToCutoff)} / ${number(m.week.actual)}</strong><small>scheduled / recorded units · full week plan: ${number(m.week.planned)}</small></div></div>
         ${m.hasPlan||weekRows.some(r=>r.actual!==null)?`<div class="ops-chart"><canvas id="ops-production-chart" role="img" aria-label="Scheduled and recorded production by day. Missing actual records are not zero. Week ${escape(weekLabel)}"></canvas></div>`:'<div class="ops-empty">No batch plan or dated MPS completions in this week. Import planning data in Data Hub.</div>'}
-        <p class="info-text">Plan reflects the current saved schedule; multi-day batches follow available line capacity. — means no actual record; no zero is assumed. ERP transactions are not added to MPS completions.</p>
+        <p class="info-text">Plan reflects the current saved schedule; multi-day batches follow available line capacity. — means no actual record; no zero is assumed. The shared report updates MPS completion totals; raw ERP rows are not added a second time.</p>
         <details class="ops-detail"><summary>Daily values and month-to-date measures</summary><div class="ops-table-wrap"><table class="gt"><thead><tr><th>Date</th><th>Scheduled units</th><th>Recorded units</th></tr></thead><tbody>${weekRows.map(r=>`<tr><td>${escape(date(r.date))}</td><td>${number(r.planned)}</td><td>${number(r.actual)}</td></tr>`).join('')}</tbody></table></div><p class="info-text">Selected-month plan completion: ${m.month.completion===null?'—':m.month.completion+'%'} · On-time adherence: ${m.month.adherence===null?'—':m.month.adherence+'%'} (${m.month.onTime}/${m.month.due} eligible due batches). Through ${escape(date(m.month.cutoff))}.</p></details>
       </section>
       <section class="card" aria-labelledby="ops-material-title"><div class="ops-heading"><h2 id="ops-material-title">Materials needing attention</h2>${action('Strategic materials','materials')}</div>

@@ -88,7 +88,7 @@
     const labor=(input.labor||[]).map(w=>({...w,gap:w.available===null?null:w.available-w.required}));
     const warningDays=Number.isFinite(input.warningDays)?Math.max(0,input.warningDays):2,erpState=input.erp||{status:'loading'};
     const completionDate=latest(facts.filter(f=>f.date&&f.date<=asOf).map(f=>f.date));
-    const sources=[freshness('MPS completions',completionDate,asOf,warningDays,input.completionInfo||{},'planning')];
+    const sources=[freshness('MPS completions',completionDate,asOf,warningDays,input.completionInfo||{},'production')];
     if(erpState.status==='ready'){
       sources.push(freshness('Stock snapshot',erpState.stockDate,asOf,warningDays,erpState.stockInfo));
       sources.push(freshness('ERP production'+(erpState.department?' · '+erpState.department:' · all departments'),erpState.productionDate,asOf,warningDays,erpState.imports.transactions));

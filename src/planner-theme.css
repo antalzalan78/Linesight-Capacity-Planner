@@ -97,6 +97,7 @@ input[type=range]::-moz-range-thumb{background:var(--blue);width:16px;height:16p
 #datahub-erp-imports .ct-import-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));}
 #datahub-erp-imports input[type=file]{display:block;max-width:100%;font-size:12px;margin:12px 0;}
 .hub-backup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start;}.hub-backup-grid .card{min-width:0;}
+.hub-production-file,.hub-production-scope{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--text2);margin:14px 0;}.hub-production-file input{max-width:100%;}.hub-production-scope .si{max-width:100%;min-width:0;}.hub-production-approval{display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:1.6;margin:14px 0;}.hub-production-approval input{margin-top:4px;flex:none;}
 @media(max-width:1000px){.hub-intro{align-items:start;flex-direction:column;}.hub-jump{max-width:none;}.hub-import-grid,.hub-backup-grid{grid-template-columns:1fr;}.hub-shortcut{align-items:start;flex-wrap:wrap;}}
 .footer{margin-top:28px;padding-top:18px;font-family:var(--font);font-size:12px;line-height:1.6;}
 .footer .nav-btn{font-family:var(--font)!important;font-size:12px!important;}

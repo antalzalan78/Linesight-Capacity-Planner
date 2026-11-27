@@ -83,8 +83,8 @@
     const warnings=[],source=table(matrix,['Internal ID','Transaction Date','Item','Quantity','Type'],{repeatable:['Machine / Line'],warnings}),records=[],issues=[];let ignoredRows=0,duplicateRows=0;
     const seen=new Map();
     for(const r of source){
-      if(!text(r['Internal ID'])||!text(r.Item)){ignoredRows++;continue;}
       if(text(r.Type)!=='Work Order Completion'){ignoredRows++;continue;}
+      if(!text(r['Internal ID'])||!text(r.Item)){issues.push('Row '+r._row+': Work Order Completion requires Internal ID and Item.');continue;}
       const qty=number(r.Quantity),d=date(r['Transaction Date']);
       if(qty===null||!d){issues.push('Row '+r._row+': invalid transaction date or Quantity');continue;}
       const lines=[...new Set((r['Machine / Line']||[]).map(text).filter(Boolean))];
@@ -205,6 +205,11 @@
     for(const r of state.watch){if(!r||typeof r.sku!=='string'||!r.sku||watch.has(r.sku)||typeof r.category!=='string'||typeof r.family!=='string'||typeof r.name!=='string'||(r.minimum!==null&&(!Number.isFinite(r.minimum)||r.minimum<0)))fail();watch.add(r.sku);}
     for(const r of Object.values(state.master.items))if(!r||['group','family','name','generic','variant'].some(k=>typeof r[k]!=='string'))fail();
     if(state.monitors!==undefined)validateMonitors(state.monitors);
+    if(state.productionBridge!==undefined){
+      const bridge=state.productionBridge;
+      if(!bridge||bridge.version!==1||typeof bridge.pending!=='boolean'||typeof bridge.department!=='string'||typeof bridge.source!=='string'||typeof bridge.at!=='string'||!Array.isArray(bridge.priorKeys))fail();
+      for(const key of bridge.priorKeys){let pair;try{pair=JSON.parse(key);}catch{fail();}if(!Array.isArray(pair)||pair.length!==2||typeof pair[0]!=='string'||date(pair[1])!==pair[1])fail();}
+    }
     return state;
   }
   function production(records,items={},filters={}){

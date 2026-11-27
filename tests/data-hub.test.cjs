@@ -10,13 +10,16 @@ const state=()=>({version:1,revision:1,master:{items:{},issues:[]},stock:[],tran
 const stockFile={name:'synthetic-stock.csv',matrix:[['Item','Location','On Hand','Available'],['QA_NLC',T.AVAILABLE[0],30,25]]};
 
 test('Data Hub moves the original planning forms instead of cloning upload inputs or changing plan data',()=>{
-  const p=planner(),before=p.json('fullState()'),moved=[];
+  const p=planner(),before=p.json('fullState()'),moved=[],production=[];
   p.run("document.getElementById('datahub-planning-imports')");
   p.elements.get('datahub-planning-imports').appendChild=node=>moved.push(node);
+  p.run("document.getElementById('datahub-production-imports')");p.elements.get('datahub-production-imports').appendChild=node=>production.push(node);
   p.run('mountPlannerImports()');
-  ['mps-import-card','completion-import-card','demand-import-card'].forEach((id,i)=>assert.equal(moved[i],p.elements.get(id)));
-  assert.equal(moved.length,3);assert.deepEqual(p.json('fullState()'),before);
-  for(const id of ['mps-file','completion-file','imp-file'])assert.equal((html.match(new RegExp('id="'+id+'"','g'))||[]).length,1);
+  ['mps-import-card','demand-import-card'].forEach((id,i)=>assert.equal(moved[i],p.elements.get(id)));
+  assert.equal(production[0],p.elements.get('completion-import-card'));
+  assert.equal(moved.length,2);assert.deepEqual(p.json('fullState()'),before);
+  for(const id of ['mps-file','production-report-file','imp-file'])assert.equal((html.match(new RegExp('id="'+id+'"','g'))||[]).length,1);
+  assert.doesNotMatch(html,/<input[^>]*id="completion-file"/);
   assert.match(html,/data-panel="datahub"/);assert.match(html,/id="panel-datahub"/);
   assert.match(html,/not included in planner cloud sync/);
 });

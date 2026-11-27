@@ -28,6 +28,7 @@ function planner(){
   vm.runInContext(fs.readFileSync(path.join(root,'src','calculations.js'),'utf8'),context);
   vm.runInContext(fs.readFileSync(path.join(root,'src','production.js'),'utf8'),context);
   vm.runInContext(fs.readFileSync(path.join(root,'src','control-tower.js'),'utf8'),context);
+  vm.runInContext(fs.readFileSync(path.join(root,'src','production-import.js'),'utf8'),context);
   vm.runInContext(fs.readFileSync(path.join(root,'src','operations-overview.js'),'utf8'),context);
   vm.runInContext(script.slice(0,script.lastIndexOf("document.getElementById('footer-date')")),context);
   const run=code=>vm.runInContext(code,context);

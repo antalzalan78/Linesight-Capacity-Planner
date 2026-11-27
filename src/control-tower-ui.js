@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const T=window.LineSightTower,VERSION='20261126-1';
+  const T=window.LineSightTower,VERSION='20261126-2';
   const el=id=>document.getElementById(id);
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt=v=>v===null||v===undefined?'—':Number(v).toLocaleString('en-GB',{maximumFractionDigits:2});
@@ -9,6 +9,7 @@
   const empty=()=>({version:1,master:{items:{},issues:[]},stock:[],transactions:[],imports:{},watch:clone(T.WATCH)});
   let data=empty(),view='materials',pending=null,db=null,loaded=false,busy=false,charts=[],selection='',prodPage=0;
   let importSurface='tower',hubMounted=false,monitorPending=null;
+  let reportMessages=false;
   let filters={category:'',search:'',from:'',to:'',department:T.CFC,line:'',group:'',family:'',generic:'',sku:''};
   let stockDate='',stockScope='all',materialPage=0;
   const button=document.createElement('button');button.className='tab';button.dataset.panel='tower';button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V7l6 3V4l6 3v14M3 21h18V11l-6 3M7 15h1M7 18h1M11 12h1M11 16h1M18 18h1"/></svg><span>Control Tower</span>';button.onclick=()=>switchTab('tower');
@@ -25,15 +26,32 @@
     request.onsuccess=()=>{const revision=request.result?.revision||0;if(revision!==expected){conflict=true;tx.abort();return;}next.revision=revision+1;store.put(next,'current');};
     tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(conflict?Error('ERP data changed in another tab. Reload before editing or importing again.'):tx.error||Error('Browser storage write aborted'));
   });}
-  function message(text,error=false){el('ct-message').textContent=text;el('ct-message').className='ct-status'+(error?' ct-error':'');const hub=el('datahub-erp-message');if(importSurface==='hub'&&hub){hub.textContent=text;hub.className='ct-status'+(error?' ct-error':'');}}
+  function message(text,error=false){el('ct-message').textContent=text;el('ct-message').className='ct-status'+(error?' ct-error':'');const hub=el('datahub-erp-message');if(importSurface==='hub'&&hub){hub.textContent=text;hub.className='ct-status'+(error?' ct-error':'');}const report=el('production-import-message');if(reportMessages&&report){report.textContent=text;report.className='ct-status'+(error?' ct-error':'');}}
   function openImports(section='erp'){if(typeof window.openDataHub==='function')window.openDataHub(section);else{view='imports';importSurface='tower';render();}}
   function refreshImportSurface(){if(importSurface==='hub')imports();else render();}
   function renderHubImports(){
     const host=el('datahub-erp-imports');if(!host)return;
     importSurface='hub';
     if(!loaded){host.innerHTML='<div class="card ct-muted">Loading local ERP data…</div>';return;}
+    bindProductionUpload();
     if(!db){host.innerHTML='<div class="card ct-error">Browser storage is unavailable. ERP imports cannot be saved.</div>';return;}
     if(!hubMounted){imports();hubMounted=true;}
+    bindProductionUpload();
+  }
+  const bridge=()=>window.LineSightProductionBridge;
+  function bindProductionUpload(){
+    if(!bridge())return;const input=el('production-report-file'),status=el('production-bridge-status');if(!input||!status)return;
+    input.disabled=!loaded||!db||!!data.productionBridge?.pending;
+    input.onchange=()=>{const file=input.files[0];input.value='';if(file)prepareImport('transactions',file);};
+    if(!db){status.innerHTML='<p class="ct-error ct-status">Browser storage is unavailable. Production imports cannot be saved.</p>';return;}
+    const journal=data.productionBridge;
+    status.innerHTML=journal?.pending?'<div class="ct-status ct-warning">ERP records are saved, but the MPS update is pending. Review and finish it before importing another production report. <button class="add-btn" id="production-review-pending">Review pending MPS update</button></div>':journal?'<p class="ct-muted">Shared import applied to Daily production and MPS. MPS department: '+escape(journal.department||'All departments')+'.</p>':data.transactions.length?'<p class="ct-muted">Existing ERP history: '+fmt(data.transactions.length)+' records; '+fmt(bridge().keys(data.transactions,T.CFC).length)+' CFC Job/day totals. These records will be included in the next shared import. Previously imported MPS completions are retained unless overlapping data is explicitly approved for replacement.</p>':'';
+    if(journal?.pending)el('production-review-pending').onclick=()=>{
+      if(busy)return;reportMessages=true;pending={kind:'transactions',retry:true,source:journal.source,at:journal.at,department:journal.department,
+        result:{records:data.transactions,sourceRows:data.transactions.length,issues:[],warnings:[],duplicateRows:0}};
+      preview();message('Review the pending MPS update. ERP records are already saved; no upload is needed.');
+    };
+    const info=el('production-import-message');if(info&&(!info.textContent||info.textContent.includes('Loading shared')))info.textContent='Choose one detailed NetSuite report, then review and apply both destinations below.';
   }
   function destroyCharts(){charts.forEach(c=>c.destroy());charts=[];}
   function select(id,label,values,value,key=v=>v){return `<label>${escape(label)}<select id="${id}" class="si"><option value="">All</option>${values.map(v=>`<option value="${escape(v)}" ${key(v)===key(value)?'selected':''}>${escape(v)}</option>`).join('')}</select></label>`;}
@@ -181,16 +199,19 @@
   }
   function imports(){
     const host=el(importSurface==='hub'?'datahub-erp-imports':'ct-body');
-    host.innerHTML=`<div class="ct-status ct-warning">ERP dashboard data is stored in this browser using IndexedDB. It is separate from planner cloud sync and plan Undo / Versions. Download an ERP backup before clearing browser data.</div><div class="ct-import-grid">${[['master','Masterdata','Item Code2 joins production Item. Identical duplicates do not multiply production. Conflicting classifications remain visible.'],['stock','Stock on hand','Full stock snapshot. Select its reporting date. Reimporting a date replaces that snapshot only.'],['transactions','Production transactions','Work Order Completion only. Quantity is the production measure. Internal ID prevents repeated uploads from counting twice. Omitted IDs are retained; changes to existing IDs require approval.']].map(([kind,title,desc])=>`<div class="card"><h3>${title}</h3><p class="ct-muted">${desc}</p><input type="file" accept=".xlsx,.xls,.csv" data-import="${kind}" aria-label="Import ${title}">${kind==='stock'?`<label class="ct-muted">Stock reporting date (confirm)<input type="date" id="ct-stock-report-date" class="ni" value="${today()}"></label>`:''}<div class="ct-source">${source(data.imports[kind])}</div></div>`).join('')}</div><div id="ct-import-preview" class="card" style="margin-top:18px;"></div><div class="card"><div class="section-label">Data quality</div><p class="ct-muted">${Object.keys(data.master.items).length} masterdata items; ${fmt(data.master.duplicateRows||0)} duplicate master rows consolidated. ${data.stock.length} stock snapshots. ${fmt(data.transactions.length)} unique completion records.</p>${data.master.issues.length?`<details class="ct-details"><summary>Conflicting master classifications (${data.master.issues.length})</summary>${data.master.issues.slice(0,50).map(s=>`<p class="ct-muted">${escape(s)}</p>`).join('')}</details>`:''}<p class="ct-muted">Country differences remain as multiple countries on one SKU. Conflicting HC or missing standard minutes are not used to invent labor or OEE KPIs. Missing source days are not automatically labelled zero-production days.</p><div class="ct-actions" style="margin-top:12px;"><label class="ct-muted">Restore an ERP backup <input type="file" id="ct-restore" accept="application/json,.json"></label></div></div>`;
+    const kinds=[['master','Masterdata','Item Code2 joins production Item. Identical duplicates do not multiply production. Conflicting classifications remain visible.'],['stock','Stock on hand','Full stock snapshot. Select its reporting date. Reimporting a date replaces that snapshot only.']];
+    if(!bridge())kinds.push(['transactions','Production transactions','Work Order Completion only. Quantity is the production measure. Internal ID prevents repeated uploads from counting twice. Omitted IDs are retained; changes to existing IDs require approval.']);
+    host.innerHTML=`<div class="ct-status ct-warning">Raw ERP data is stored in this browser using IndexedDB and is not included in planner cloud sync. Aggregated completions from the shared production import are included in the plan. Download an ERP backup before clearing browser data.</div><div class="ct-import-grid">${kinds.map(([kind,title,desc])=>`<div class="card"><h3>${title}</h3><p class="ct-muted">${desc}</p><input type="file" accept=".xlsx,.xls,.csv" data-import="${kind}" aria-label="Import ${title}">${kind==='stock'?`<label class="ct-muted">Stock reporting date (confirm)<input type="date" id="ct-stock-report-date" class="ni" value="${today()}"></label>`:''}<div class="ct-source">${source(data.imports[kind])}</div></div>`).join('')}</div><div id="ct-import-preview" class="card" style="margin-top:18px;"></div><div class="card"><div class="section-label">Data quality</div><p class="ct-muted">${Object.keys(data.master.items).length} masterdata items; ${fmt(data.master.duplicateRows||0)} duplicate master rows consolidated. ${data.stock.length} stock snapshots. ${fmt(data.transactions.length)} unique completion records.</p>${data.master.issues.length?`<details class="ct-details"><summary>Conflicting master classifications (${data.master.issues.length})</summary>${data.master.issues.slice(0,50).map(s=>`<p class="ct-muted">${escape(s)}</p>`).join('')}</details>`:''}<p class="ct-muted">Country differences remain as multiple countries on one SKU. Conflicting HC or missing standard minutes are not used to invent labor or OEE KPIs. Missing source days are not automatically labelled zero-production days.</p><div class="ct-actions" style="margin-top:12px;"><label class="ct-muted">Restore an ERP backup <input type="file" id="ct-restore" accept="application/json,.json"></label></div></div>`;
     host.innerHTML+=`<section id="datahub-settings" class="hub-section" aria-labelledby="hub-settings-title"><div class="hub-section-heading"><h2 id="hub-settings-title">Backups &amp; setup</h2><span class="hub-storage hub-local">Private browser data</span></div><div class="hub-backup-grid"><div class="card"><div class="section-label">Strategic monitor setup</div><p class="ct-muted">Import item lists and monitor groups from a private JSON setup. Existing non-blank safety-stock targets for matching groups are kept. Stock and production records are not replaced.</p><label class="ct-muted">Import monitor setup<input id="ct-import-monitors" type="file" accept="application/json,.json" aria-label="Import monitor setup"></label><button id="ct-hub-download-monitors" class="add-btn">Download current monitor setup</button><div id="ct-monitor-import-preview"></div></div><div class="card"><div class="section-label">ERP backup</div><p class="ct-muted">Includes ERP masterdata, stock snapshots, transactions and monitor settings. It does not include your capacity plan or MPS. Restoring replaces local ERP data only and requires confirmation.</p><button id="ct-hub-backup" class="add-btn">Download ERP backup</button><div id="ct-hub-restore-slot"></div></div></div></section>`;
     el('ct-hub-restore-slot').appendChild(el('ct-restore').parentElement);
     host.querySelectorAll('[data-import]').forEach(input=>input.onchange=()=>{const file=input.files[0];if(file)prepareImport(input.dataset.import,file);input.value='';});
-    el('ct-restore').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const parsed=T.validateBackup(JSON.parse(await file.text()));if(!confirm('Replace local ERP dashboard data with this backup? Download the current backup first if needed.'))return;await persist(parsed);data=parsed;setDefaultDates();stockScope=data.watch.length?'watch':'all';filters.category='';filters.search='';materialPage=0;view=data.stock.length?(T.monitorSetup(data.watch,data.monitors).some(p=>p.groups.length)?'materials':'explorer'):'imports';pending=null;monitorPending=null;message('ERP backup restored.');refreshImportSurface();}catch(error){message(error.message,true);}};
+    el('ct-restore').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const parsed=T.validateBackup(JSON.parse(await file.text()));if(!confirm('Replace local ERP dashboard data with this backup? Download the current backup first if needed.'))return;if(parsed.productionBridge)parsed.productionBridge={...parsed.productionBridge,pending:true};await persist(parsed);data=parsed;setDefaultDates();stockScope=data.watch.length?'watch':'all';filters.category='';filters.search='';materialPage=0;view=data.stock.length?(T.monitorSetup(data.watch,data.monitors).some(p=>p.groups.length)?'materials':'explorer'):'imports';pending=null;monitorPending=null;message('ERP backup restored.'+(parsed.productionBridge?' Review the pending MPS update; the planner was not replaced.':''));refreshImportSurface();}catch(error){message(error.message,true);}};
     el('ct-hub-backup').onclick=backup;
     el('ct-hub-download-monitors').onclick=()=>download('linesight-monitor-setup-'+today()+'.json',JSON.stringify({kind:'linesight-monitor-setup',version:1,monitors:T.monitorSetup(data.watch,data.monitors)},null,2),'application/json');
     el('ct-import-monitors').onchange=async e=>{if(busy){message('Finish the current import first.',true);return;}const file=e.target.files[0];if(!file)return;try{const payload=JSON.parse(await file.text());T.importMonitorSetup(payload,T.monitorSetup(data.watch,data.monitors));monitorPending={payload,name:file.name||'Monitor setup'};monitorPreview();message('Monitor setup preview ready. Click Apply monitor setup to save it.');}catch(error){monitorPending=null;el('ct-monitor-import-preview').innerHTML='';message('Monitor changes were not saved: '+error.message,true);}};
     if(monitorPending)monitorPreview();
     if(pending)preview();
+    bindProductionUpload();
   }
   function monitorPreview(){
     if(!monitorPending)return;
@@ -201,15 +222,58 @@
   }
   function parseFile(kind,file){return new Promise((resolve,reject)=>{const worker=new Worker('./src/erp-import-worker.js?v='+VERSION);worker.onmessage=e=>{if(e.data.progress)message(e.data.progress);if(e.data.error){worker.terminate();reject(Error(e.data.error));}if(e.data.result){worker.terminate();resolve(e.data.result);}};worker.onerror=e=>{worker.terminate();reject(Error(e.message||'The Excel import worker failed.'));};worker.postMessage({kind,file});});}
   async function prepareImport(kind,file){
-    if(busy){message('Finish the current import first.',true);return;}busy=true;pending=null;
+    if(busy){message('Finish the current import first.',true);return;}
+    reportMessages=kind==='transactions';
+    if(kind==='transactions'&&bridge()&&data.productionBridge?.pending){message('Finish the pending MPS update before importing another production report.',true);bindProductionUpload();return;}
+    busy=true;pending=null;el('ct-import-preview').innerHTML='';if(el('production-import-preview'))el('production-import-preview').innerHTML='';
     try{
       const date=kind==='stock'?T.date(el('ct-stock-report-date').value):null;if(kind==='stock'&&!date)throw Error('Select the stock reporting date first.');
       const result=await parseFile(kind,file);
-      pending={kind,result,source:file.name,date};message('Import preview ready. Click Apply import below to save the data. Nothing has been changed yet.');preview();
-    }catch(e){message(e.message,true);}finally{busy=false;}
+      pending={kind,result,source:file.name,date,at:new Date().toISOString(),department:data.productionBridge?.department??T.CFC};message('Import preview ready. Click Apply import below to save the data. Nothing has been changed yet.');preview();
+    }catch(e){pending=null;message(e.message,true);}finally{busy=false;}
+  }
+  function productionPreview(){
+    const p=pending,r=p.result,api=bridge(),merge=T.mergeTransactions(data.transactions,r.records),revision=data.revision||0;
+    const priorKeys=p.retry?data.productionBridge.priorKeys:api.keys(data.transactions,p.department);
+    const ticket=api.preview(merge.records,{department:p.department,priorKeys,source:p.source,at:p.at});
+    const result=ticket.result,blocked=r.issues.length>0||!r.records.length||result.errors.length>0||!result.stats.records;
+    const correction=merge.updated>0||result.warnings.length>0;
+    const departments=unique([T.CFC,p.department,...merge.records.map(v=>v.department)]),target=el('production-import-preview');
+    target.innerHTML=`<h3>${escape(p.source)}</h3><p class="ct-muted">${p.retry?'ERP data is already saved. This finishes the pending planner update.':fmt(r.records.length)+' completion records in this file · '+merge.added+' new · '+merge.updated+' changed · '+merge.unchanged+' unchanged IDs.'} Repeated IDs are not counted twice. Quantity, not Built, is the shared production measure.</p>
+      <label class="hub-production-scope">MPS department (Daily production retains every department)<select class="si" id="production-scope" ${p.retry?'disabled':''}><option value="" ${p.department===''?'selected':''}>All departments</option>${departments.map(d=>`<option value="${escape(d)}" ${d===p.department?'selected':''}>${escape(d)}</option>`).join('')}</select></label>
+      <p class="ct-muted">MPS preview: ${fmt(result.stats.records)} retained records → ${fmt(result.stats.jobDays)} Job/day totals; ${fmt(result.stats.changed)} changed totals. ${fmt(result.stats.unmatched)} totals have no unique MPS match and remain in actual production. ${fmt(result.stats.missingJobs)} records have no Job number. ${fmt(result.stats.retainedHistory)} older managed totals absent from this browser's ERP history are retained. ${fmt(result.stats.legacyEvents)} legacy event IDs not yet present in ERP history remain in MPS only; import their transaction history to reconcile both views.</p>
+      ${!result.stats.records?'<p class="ct-error">No retained completion records in the selected MPS department. Choose a department represented in the report.</p>':''}
+      ${!r.records.length?'<p class="ct-error">No Work Order Completion records found. Choose the detailed NetSuite transaction export.</p>':''}
+      ${[...r.issues,...result.errors].slice(0,20).map(s=>`<p class="ct-error">${escape(s)}</p>`).join('')}
+      ${[...(r.warnings||[]),...result.warnings].slice(0,20).map(s=>`<p class="ct-warning">${escape(s)}</p>`).join('')}
+      ${correction?'<label class="hub-production-approval"><input type="checkbox" id="ct-confirm-change"> Approve changed IDs, replacement of overlapping legacy totals / manual corrections, and any MPS department changes. Existing history is retained.</label>':''}
+      <div class="ct-actions"><button id="ct-apply" class="add-btn" ${blocked||correction?'disabled':''}>${p.retry?'Finish MPS update':'Apply to Daily production + MPS'}</button><button id="ct-cancel" class="add-btn">Cancel</button></div>`;
+    el('production-scope').onchange=e=>{p.department=e.target.value;productionPreview();};
+    if(correction){el('ct-confirm-change').checked=false;el('ct-confirm-change').onchange=e=>el('ct-apply').disabled=blocked||!e.target.checked;}
+    el('ct-cancel').onclick=()=>{pending=null;target.innerHTML='';message(p.retry?'Review cancelled. The saved ERP import still has a pending MPS update.':'Import cancelled. Existing data was kept.');};
+    el('ct-apply').onclick=async()=>{
+      if(pending!==p||busy||blocked||correction&&!el('ct-confirm-change').checked)return;
+      if((data.revision||0)!==revision){productionPreview();message('ERP data changed since preview. Review the updated preview.',true);return;}
+      busy=true;el('ct-apply').disabled=true;let erpSaved=!!p.retry,plannerSaved=false;
+      try{
+        if(!p.retry){
+          const next={...data,transactions:merge.records,imports:{...data.imports,transactions:{source:p.source,at:p.at,rows:r.sourceRows}},
+            productionBridge:{version:1,pending:true,department:p.department,source:p.source,at:p.at,priorKeys}};
+          await persist(next);data=next;erpSaved=true;
+        }
+        api.commit(ticket,!!el('ct-confirm-change')?.checked);plannerSaved=true;
+        const done={...data,productionBridge:{...data.productionBridge,pending:false,priorKeys:[]}};
+        await persist(done);data=done;pending=null;target.innerHTML='';view='production';setDefaultDates();refreshImportSurface();
+        message('Production import saved to Daily production and MPS. Repeated uploads do not add the same completions twice.');
+      }catch(error){
+        if(erpSaved){pending=null;target.innerHTML='';setDefaultDates();refreshImportSurface();message((plannerSaved?'ERP and MPS are saved, but the completion marker is pending. Review the pending update to finish. ':'ERP records are saved; the MPS update is pending. Review and retry without uploading again. ')+error.message,true);}
+        else{message('Import was not saved: '+error.message,true);el('ct-apply').disabled=false;}
+      }finally{busy=false;bindProductionUpload();}
+    };
   }
   function preview(){
     if(!pending||!el('ct-import-preview'))return;
+    if(pending.kind==='transactions'&&bridge()){productionPreview();return;}
     const p=pending,r=p.result,merge=p.kind==='transactions'?T.mergeTransactions(data.transactions,r.records):null;
     const blocked=p.kind!=='master'&&r.issues.length>0;
     const replacing=p.kind==='stock'&&data.stock.some(s=>s.date===p.date);
@@ -218,7 +282,7 @@
     if(correction)el('ct-confirm-change').onchange=e=>el('ct-apply').disabled=blocked||!e.target.checked;
     el('ct-cancel').onclick=()=>{pending=null;el('ct-import-preview').innerHTML='';message('Import cancelled.');};
     el('ct-apply').onclick=async()=>{
-      if(blocked||busy||(correction&&!el('ct-confirm-change').checked))return;busy=true;el('ct-apply').disabled=true;
+      if(pending!==p||blocked||busy||(correction&&!el('ct-confirm-change').checked))return;busy=true;el('ct-apply').disabled=true;
       try{
         const next={...data,imports:{...data.imports}};const at=new Date().toISOString();
         if(p.kind==='master')next.master=r;

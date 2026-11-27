@@ -9,9 +9,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./src/calculations.js?v=cb6c69b40ffe"></script>
 <script src="./src/production.js?v=5bc41f75a050"></script>
-<script src="./src/control-tower.js?v=20261126-1"></script>
-<script src="./src/operations-overview.js?v=20261126-1"></script>
-<link rel="stylesheet" href="./src/control-tower.css?v=20261126-1">
+<script src="./src/control-tower.js?v=20261126-2"></script>
+<script src="./src/operations-overview.js?v=20261126-2"></script>
+<script src="./src/production-import.js?v=20261126-2"></script>
+<link rel="stylesheet" href="./src/control-tower.css?v=20261126-2">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 :root{
@@ -177,7 +178,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 #report-view .good{color:#047857;}
 #report-view img{max-width:100%;margin-top:6px;}
 </style>
-<link rel="stylesheet" href="./src/planner-theme.css?v=20261126-1">
+<link rel="stylesheet" href="./src/planner-theme.css?v=20261126-2">
 </head>
 <body>
 
@@ -229,9 +230,10 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 <!-- ══ WEEKLY ══ -->
 <div class="view-panel active" id="panel-overview"><div class="card info-text">Loading operations overview…</div></div>
 <div class="view-panel" id="panel-datahub">
-  <div class="hub-intro card"><div><h2>One place for every upload</h2><p>Choose the source below, review the preview and apply only the changes you want. No file is uploaded automatically when you open this menu.</p></div><div class="hub-jump"><button class="add-btn" onclick="openDataHub('planning')">Planning data</button><button class="add-btn" onclick="openDataHub('erp')">ERP reports</button><button class="add-btn" onclick="openDataHub('settings')">Backups &amp; setup</button></div></div>
+  <div class="hub-intro card"><div><h2>One place for every upload</h2><p>Choose the source below, review the preview and apply only the changes you want. No file is uploaded automatically when you open this menu.</p></div><div class="hub-jump"><button class="add-btn" onclick="openDataHub('planning')">Planning data</button><button class="add-btn" onclick="openDataHub('production')">Production report</button><button class="add-btn" onclick="openDataHub('erp')">ERP master &amp; stock</button><button class="add-btn" onclick="openDataHub('settings')">Backups &amp; setup</button></div></div>
   <section id="datahub-planning" class="hub-section" aria-labelledby="hub-planning-title"><div class="hub-section-heading"><h2 id="hub-planning-title">Planning data</h2><span class="hub-storage">Planner · local + configured cloud sync</span></div><p class="info-text">These imports update the capacity plan and MPS. Your existing column mapping, preview and correction checks still apply.</p><div class="hub-current" id="datahub-planner-status" role="status"></div><div id="datahub-planning-imports" class="hub-import-grid"></div></section>
-  <section id="datahub-erp" class="hub-section" aria-labelledby="hub-erp-title"><div class="hub-section-heading"><h2 id="hub-erp-title">ERP reports</h2><span class="hub-storage hub-local">Control Tower · browser storage only</span></div><p class="info-text">Masterdata, stock snapshots and production transactions feed the Control Tower. They are separate from MPS completion imports and are not included in planner cloud sync.</p><div id="datahub-erp-message" class="ct-status" role="status"></div><div id="datahub-erp-imports"><div class="card info-text">Loading ERP import tools…</div></div></section>
+  <section id="datahub-production" class="hub-section" aria-labelledby="hub-production-title"><div class="hub-section-heading"><h2 id="hub-production-title">Production completion / transactions</h2><span class="hub-storage">One import · MPS + Control Tower</span></div><div id="datahub-production-imports"></div></section>
+  <section id="datahub-erp" class="hub-section" aria-labelledby="hub-erp-title"><div class="hub-section-heading"><h2 id="hub-erp-title">ERP masterdata &amp; stock</h2><span class="hub-storage hub-local">Control Tower · browser storage only</span></div><p class="info-text">Masterdata and stock snapshots feed the Control Tower. They are not included in planner cloud sync. Use the shared production report section above for completion data.</p><div id="datahub-erp-message" class="ct-status" role="status"></div><div id="datahub-erp-imports"><div class="card info-text">Loading ERP import tools…</div></div></section>
 </div>
 <div class="view-panel" id="panel-weekly">
   <div class="layout weekly-layout">
@@ -399,16 +401,13 @@ button:disabled{opacity:.6;cursor:not-allowed;}
       <div id="mps-preview" style="margin-top:10px;"></div>
     </div>
     <div class="card" id="completion-import-card">
-      <div class="section-label">Production Completion import</div>
-      <p class="info-text">Use a full <strong>Job + Transaction Date</strong> daily total export. A decrease requires explicit approval. Unmatched jobs are retained and automatically linked when their MPS batch is added. For incremental files, use unique completion IDs.</p>
-      <select id="completion-mode" class="si" style="margin-bottom:8px;" onchange="completionPreview()">
-        <option value="snapshot">Full Job/day totals (NetSuite sample format)</option>
-        <option value="events">Incremental — unique Completion / Internal ID required</option>
-      </select>
-      <label style="display:flex;gap:8px;font-size:11px;margin-bottom:10px;"><input type="checkbox" id="completion-corrections" onchange="completionPreview()">Approve decreases, changed import modes and replacement of manual corrections</label>
-      <button class="add-btn" style="margin-top:0;" onclick="document.getElementById('completion-file').click()">⬆ Choose NetSuite Excel/CSV…</button>
-      <input type="file" id="completion-file" accept=".xlsx,.xlsm,.xls,.csv" style="display:none" onchange="completionFile(this.files[0]);this.value=''">
-      <div id="completion-preview" style="margin-top:10px;"></div>
+      <div class="section-label">NetSuite production report</div>
+      <p class="info-text">Upload the detailed transaction export once. Work Order Completion records update Daily production and the selected department's MPS completion totals. Required columns: <strong>Internal ID, Transaction Date, Item, Quantity, Type</strong>; Job links completions to batches. Job/day-only legacy files are not a detailed transaction export.</p>
+      <label class="hub-production-file">Production completion report<input type="file" id="production-report-file" accept=".xlsx,.xlsm,.xls,.csv" aria-label="Import production completion report" disabled></label>
+      <div id="production-import-message" class="ct-status" role="status">Loading shared production importer…</div>
+      <div id="production-bridge-status" role="status"></div>
+      <div id="production-import-preview"></div>
+      <p class="info-text">Raw ERP records stay in this browser and are included in ERP backups. Only aggregated MPS completions enter planner Undo / Versions and configured cloud sync. Legacy completion history is retained; overlapping totals, corrections and changed manual values require approval.</p>
       <div id="completion-unmatched" style="margin-top:10px;"></div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <button class="add-btn" style="margin-top:0;" onclick="exportProductionLog()">Export production log CSV</button>
@@ -1989,7 +1988,8 @@ const plannerViews={
 };
 function mountPlannerImports(){
   const host=document.getElementById('datahub-planning-imports');
-  ['mps-import-card','completion-import-card','demand-import-card'].forEach(id=>host.appendChild(document.getElementById(id)));
+  ['mps-import-card','demand-import-card'].forEach(id=>host.appendChild(document.getElementById(id)));
+  document.getElementById('datahub-production-imports').appendChild(document.getElementById('completion-import-card'));
 }
 function openDataHub(section=''){
   switchTab('datahub');
@@ -3204,6 +3204,29 @@ function completionApply(){
   document.getElementById('completion-corrections').checked=false;
   render();
 }
+// A shared import commits raw rows in IndexedDB first. The ERP journal remains
+// pending until this synchronous, quota-checked planner save has succeeded.
+window.LineSightProductionBridge={
+  keys:LineSightProductionImport.keys,
+  preview(records,options){
+    return {result:LineSightProductionImport.project({ledger:productionLedger,batches:mps},records,options),
+      baseline:JSON.stringify({ledger:productionLedger,batches:mps}),disk:localStorage.getItem('ls_planner'),options};
+  },
+  commit(ticket,approved){
+    const result=ticket.result;
+    if(result.errors.length||result.warnings.length&&!approved)throw Error('Review and approve the MPS completion changes first.');
+    if(ticket.baseline!==JSON.stringify({ledger:productionLedger,batches:mps})||ticket.disk!==localStorage.getItem('ls_planner'))throw Error('The planner changed after preview. Review the pending MPS update again.');
+    const before=fullState(),info={at:ticket.options.at,source:ticket.options.source,rows:result.stats.records,kind:'netsuite-transactions',department:ticket.options.department};
+    const saved={...before,mps:result.batches,productionLedger:result.ledger,productionImportInfo:info,curDate:curDate.toISOString()};
+    try{localStorage.setItem('ls_planner',JSON.stringify(saved));}
+    catch(error){throw Error('MPS local save failed (browser storage may be full). The ERP import is saved; retry the pending MPS update. '+error.message);}
+    productionLedger=result.ledger;mps=result.batches;productionImportInfo=info;
+    pushUndoState(before);lastPlanState=JSON.stringify(fullState());
+    schedulePush();
+    try{render();}catch(error){console.warn('Production saved; reopen the view to refresh it.',error);}
+    return {saved:true,stats:result.stats};
+  }
+};
 function productionMonth(d=curDate){
   const start=dk(new Date(d.getFullYear(),d.getMonth(),1)),end=dk(new Date(d.getFullYear(),d.getMonth()+1,0));
   return LineSightProduction.metrics(mps,productionLedger,{start,end,asOf:dk(new Date())});
@@ -3217,7 +3240,7 @@ function renderProductionIssues(){
   const unmatched=Object.values(productionLedger).filter(v=>counts.get(v.job)!==1);
   const el=document.getElementById('completion-unmatched');
   el.innerHTML=`<p class="info-text">${productionImportInfo?'Last import: '+esc(new Date(productionImportInfo.at).toLocaleString('en-GB'))+' · '+esc(productionImportInfo.source):'No new production import yet.'}</p>`
-    +(unmatched.length?`<details open><summary style="color:var(--yellow);font-size:11px;">${unmatched.length} retained Job/day totals need matching</summary><div style="max-height:200px;overflow:auto;"><table class="gt"><tr><th>Job</th><th>Actual date</th><th>Units</th><th>Reason</th></tr>${unmatched.map(v=>`<tr><td>${esc(v.job)}</td><td>${esc(v.date)}</td><td>${hu(v.qty)}</td><td>${counts.get(v.job)>1?'Duplicate Job in MPS':'Job not in MPS yet'}</td></tr>`).join('')}</table></div></details>`:'<p class="info-text">All imported jobs are linked to one MPS batch.</p>');
+    +(unmatched.length?`<details><summary style="color:var(--yellow);font-size:11px;">${unmatched.length} retained Job/day totals need matching</summary><div style="max-height:200px;overflow:auto;"><table class="gt"><tr><th>Job</th><th>Actual date</th><th>Units</th><th>Reason</th></tr>${unmatched.slice(0,100).map(v=>`<tr><td>${esc(v.job)}</td><td>${esc(v.date)}</td><td>${hu(v.qty)}</td><td>${counts.get(v.job)>1?'Duplicate Job in MPS':'Job not in MPS yet'}</td></tr>`).join('')}</table></div>${unmatched.length>100?'<p class="info-text">Showing the first 100 totals. Export production log CSV includes every record.</p>':''}</details>`:Object.keys(productionLedger).length?'<p class="info-text">All imported jobs are linked to one MPS batch.</p>':'<p class="info-text">No completion totals applied to MPS yet. Use the shared production report above.</p>');
 }
 function renderProductionDaily(){
   const m=mk(curDate),cutoff=productionMonth().cutoff,days=new Map();
@@ -3236,7 +3259,7 @@ function exportProductionLog(){
   downloadCSV(rows,'linesight_production_actuals.csv');
 }
 function exportProductionBackup(){
-  const blob=new Blob([JSON.stringify({productionLedger,productionImportInfo,manualCorrections:mps.filter(r=>r.manualProduction).map(r=>({job:r.job,manualProduction:r.manualProduction,productionBaseline:r.productionBaseline}))},null,2)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({productionLedger,productionImportInfo,manualCorrections:mps.filter(r=>r.manualProduction||r.productionCorrectionHistory?.length).map(r=>({job:r.job,manualProduction:r.manualProduction,productionBaseline:r.productionBaseline,productionCorrectionHistory:r.productionCorrectionHistory}))},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='linesight_production_backup.json';a.click();URL.revokeObjectURL(a.href);
 }
 
@@ -3324,7 +3347,7 @@ function mpsConvert(ci){
       if(ci.std>=0){ const v=parseFloat(String(r[ci.std]).replace(',','.')); if(v>0) info.stdMin=v; }
     }
     // job/batch number: numbers are read at full precision (the 1E+07 look is just Excel display formatting)
-    const job=ci.job>=0?String(r[ci.job]??'').trim():'';
+    const job=ci.job>=0?LineSightTower.job(r[ci.job]):'';
     const setup=ci.setup>=0?(parseFloat(String(r[ci.setup]).replace(',','.'))||0):0;
     // actual batch run time in minutes: prefer the minutes column, else convert the hours column
     let runMin=0;
@@ -3403,7 +3426,7 @@ function mpsApply(){
   res.out.forEach(r=>{
     const old=oldByJob.get(String(r.job||'').trim());
     if(old&&old.length===1){
-      ['completionByDate','manualProduction','productionBaseline'].forEach(k=>{if(old[0][k])r[k]=JSON.parse(JSON.stringify(old[0][k]));});
+      ['completionByDate','manualProduction','productionBaseline','productionCorrectionHistory'].forEach(k=>{if(old[0][k])r[k]=JSON.parse(JSON.stringify(old[0][k]));});
       if(!r.dueDate&&old[0].dueDate)r.dueDate=old[0].dueDate;
     }
   });
@@ -4731,7 +4754,7 @@ initAuth().then(()=>{
   else if(syncCfg.enabled) setSyncStatus('○ local mode — sign in to sync');
 });
 </script>
-<script src="./src/operations-overview-ui.js?v=20261126-1"></script>
-<script src="./src/control-tower-ui.js?v=20261126-1"></script>
+<script src="./src/operations-overview-ui.js?v=20261126-2"></script>
+<script src="./src/control-tower-ui.js?v=20261126-2"></script>
 </body>
 </html>
